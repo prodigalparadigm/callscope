@@ -1,0 +1,124 @@
+# Example rubric: a generic inbound customer support call.
+#
+# Nothing in this file is hardcoded into callscope. Copy it, rewrite every
+# criterion for your own domain, and pass it with `--rubric`. The engine only
+# cares about the structure.
+#
+# Criterion fields
+#   id              required, unique within the rubric
+#   name            human label used in reports
+#   description     shown in reports; also given to the LLM judge
+#   weight          relative contribution to the overall score
+#   max_score       points available for this criterion
+#   scope           call | speaker | first_seconds | last_seconds
+#   speaker         for scope: speaker -- SPEAKER_00, SPEAKER_01, or omit for either
+#   window_seconds  for the first_seconds / last_seconds scopes
+#   patterns        case-insensitive regexes (Python `re` syntax)
+#   match           any (default) -> full marks on first hit
+#                   all           -> proportional credit, n matched of n required
+#   disqualifiers   regexes that force the score to zero
+#   pass_threshold  fraction of max_score at or above which this counts as passed
+#   guidance        free text for the LLM judge; ignored by the keyword judge
+
+id: support_call_v1
+name: Inbound support call
+description: >
+  Generic QA rubric for a two-party inbound support interaction. Illustrative
+  only -- calibrate the patterns and weights against your own call sample before
+  using the scores for anything that matters.
+version: "1"
+
+# Switch to `backend: llm` to move the semantic track to model-based judging.
+# No other change is required. See docs/llm-judge.md.
+judge:
+  backend: keyword
+
+criteria:
+  - id: greeting
+    name: Opened with a greeting
+    description: The agent opened the call with a recognizable greeting.
+    weight: 1.0
+    max_score: 1.0
+    scope: first_seconds
+    window_seconds: 30
+    patterns:
+      - "\\b(thanks for calling|thank you for calling|good (morning|afternoon|evening))\\b"
+      - "\\bhow (can|may) i help\\b"
+    guidance: >
+      Award full marks for any warm, professional opening in the first moments of
+      the call. Do not require exact wording.
+
+  - id: identification
+    name: Identified self and captured the customer
+    description: The agent gave their name and asked for the customer's.
+    weight: 1.0
+    max_score: 1.0
+    scope: first_seconds
+    window_seconds: 60
+    match: all
+    patterns:
+      - "\\b(this is|my name is|you'?re speaking (with|to))\\b"
+      - "\\b(may i (take|have|get)|can i (take|have|get)|who am i speaking)\\b"
+    guidance: >
+      Both halves are required: the agent identifies themselves, and the agent
+      asks for the caller's identity. Award half credit when only one occurs.
+
+  - id: issue_capture
+    name: Captured the reported issue
+    description: The customer's problem was acknowledged in the agent's own words.
+    weight: 1.5
+    max_score: 1.0
+    scope: call
+    patterns:
+      - "\\b(let me (pull|look|check)|i can see|i'?ll (check|look into)|pulling that up)\\b"
+      - "\\b(so (what|if) i'?m hearing|just to confirm|to make sure i understand)\\b"
+    guidance: >
+      Look for evidence the agent restated or actively investigated the issue,
+      rather than only listening to it.
+
+  - id: resolution
+    name: Offered a concrete resolution
+    description: A specific next action or remedy was offered, not a vague promise.
+    weight: 2.0
+    max_score: 1.0
+    scope: call
+    patterns:
+      - "\\b(i (am|'ll|will) (reship|refund|replace|escalate|credit|send))\\b"
+      - "\\b(no charge|free of charge|at no cost|full refund)\\b"
+      - "\\b(i'?ve (created|opened|raised) (a|the) (ticket|case|order))\\b"
+    disqualifiers:
+      - "\\bnothing i can do\\b"
+      - "\\bthat'?s not (my|our) (problem|department)\\b"
+    guidance: >
+      A concrete resolution names an action and, where relevant, a timeframe.
+      "Someone will get back to you" is not a resolution.
+
+  - id: closing
+    name: Closed the call properly
+    description: The agent closed with thanks or an offer of further help.
+    weight: 1.0
+    max_score: 1.0
+    scope: last_seconds
+    window_seconds: 45
+    patterns:
+      - "\\b(anything else|is there anything else)\\b"
+      - "\\b(thank you for|thanks for) (your|calling|being)\\b"
+      - "\\b(have a (great|good|nice)|goodbye|take care)\\b"
+    guidance: Any courteous, unhurried close counts.
+
+  - id: prohibited_language
+    name: Avoided prohibited language
+    description: The call contained no dismissive or prohibited phrasing.
+    weight: 1.5
+    max_score: 1.0
+    scope: call
+    # Matches on any ordinary call; the disqualifiers are what actually score it.
+    patterns:
+      - "(?s).*"
+    disqualifiers:
+      - "\\b(calm down|you'?re wrong|that'?s (stupid|ridiculous))\\b"
+      - "\\bi (already )?(told|said to) you\\b"
+    pass_threshold: 1.0
+    guidance: >
+      This criterion starts at full marks and is lost only on a violation.
+      Score 0 if the agent was dismissive, condescending, or hostile.

@@ -1,0 +1,70 @@
+# A second example rubric, present to demonstrate that the engine carries no
+# domain assumptions: same code, entirely different criteria and weights.
+
+id: sales_discovery_v1
+name: Outbound discovery call
+description: >
+  Generic qualification rubric for a two-party outbound discovery call.
+  Illustrative only.
+version: "1"
+
+judge:
+  backend: keyword
+
+criteria:
+  - id: permission
+    name: Asked permission for the time
+    description: The rep confirmed it was a workable time before launching in.
+    weight: 1.0
+    max_score: 1.0
+    scope: first_seconds
+    window_seconds: 45
+    patterns:
+      - "\\b(is now a good time|did i catch you|do you have (a few|a couple|five))\\b"
+
+  - id: discovery_questions
+    name: Asked open discovery questions
+    description: Open-ended questions about the prospect's situation.
+    weight: 2.0
+    max_score: 1.0
+    scope: call
+    patterns:
+      - "\\b(what (does|are|is)|how (do|does|are) you|walk me through|tell me about)\\b"
+      - "\\bwhat happens (today|now|currently)\\b"
+
+  - id: quantified_pain
+    name: Quantified the problem
+    description: The cost, frequency, or scale of the problem was established.
+    weight: 2.0
+    max_score: 1.0
+    scope: call
+    patterns:
+      - "\\b(how (many|much|often|long))\\b"
+      - "\\b(hours per|times a|per (week|month|quarter|year))\\b"
+
+  - id: next_step
+    name: Secured a specific next step
+    description: A concrete, dated next action was agreed.
+    weight: 2.0
+    max_score: 1.0
+    scope: last_seconds
+    window_seconds: 90
+    match: all
+    patterns:
+      - "\\b(next (step|week)|follow up|schedule|book|calendar|send you)\\b"
+      - "\\b(monday|tuesday|wednesday|thursday|friday|tomorrow|\\d{1,2}(st|nd|rd|th))\\b"
+
+  - id: monologue_check
+    name: Did not monologue
+    description: >
+      Placeholder for a talk-ratio criterion. Talk ratio is measured properly on
+      the paralinguistic track, from the audio; this line exists to show that the
+      two tracks are separate and that the semantic track should not try to
+      re-derive a signal metric from text.
+    weight: 0.5
+    max_score: 1.0
+    scope: call
+    patterns:
+      - "(?s).*"
+    disqualifiers:
+      - "\\bas i was saying\\b"
