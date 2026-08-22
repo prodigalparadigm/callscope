@@ -13,6 +13,10 @@ from pathlib import Path
 
 from callscope.schema import CallReport, CriterionResult, SemanticResult
 
+#: The report formats :func:`write_reports` knows how to render. The CLI
+#: validates ``--formats`` against this, so the two cannot drift apart.
+REPORT_FORMATS: tuple[str, ...] = ("json", "txt", "html")
+
 
 def render_json(report: CallReport, *, indent: int = 2) -> str:
     """Serialize the full report. This is the machine-readable contract."""
@@ -228,7 +232,7 @@ def write_reports(
     directory = Path(out_dir)
     directory.mkdir(parents=True, exist_ok=True)
     stem = _safe_stem(report.call_id)
-    renderers = {"json": render_json, "txt": render_text, "html": render_html}
+    renderers = _RENDERERS
 
     written: dict[str, Path] = {}
     for fmt in formats:
@@ -239,6 +243,13 @@ def write_reports(
         path.write_text(renderer(report), encoding="utf-8")
         written[fmt] = path
     return written
+
+
+#: Bound to REPORT_FORMATS at import time so the CLI's advertised choices and
+#: the renderers that actually exist cannot drift apart silently.
+_RENDERERS = {"json": render_json, "txt": render_text, "html": render_html}
+if set(_RENDERERS) != set(REPORT_FORMATS):  # pragma: no cover - import-time invariant
+    raise RuntimeError("REPORT_FORMATS and the renderer table disagree")
 
 
 def _evidence_html(criterion: CriterionResult) -> str:

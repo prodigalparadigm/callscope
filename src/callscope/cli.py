@@ -19,14 +19,14 @@ from pathlib import Path
 from callscope import __version__
 from callscope.audio import ffmpeg_available, write_wav
 from callscope.diarize import DiarizationConfig, pyannote_available
-from callscope.errors import CallscopeError
+from callscope.errors import CallscopeError, UsageError
 from callscope.fixtures import (
     default_two_speaker_script,
     script_to_transcript_dict,
     synthesize_call,
 )
 from callscope.pipeline import PipelineConfig, analyze_call
-from callscope.report import render_text, write_reports
+from callscope.report import REPORT_FORMATS, render_text, write_reports
 from callscope.rubric import load_rubric
 from callscope.transcribe import (
     BACKEND_PREFERENCE,
@@ -61,10 +61,18 @@ def main(argv: list[str] | None = None) -> int:
                 return _cmd_demo(args)
         parser.print_help()
         return 2
+    except UsageError as exc:
+        print(f"callscope: {exc}", file=sys.stderr)
+        return 2
     except CallscopeError as exc:
         print(f"callscope: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
     except FileNotFoundError as exc:
+        print(f"callscope: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        # Unreadable rubric, unwritable report directory: a real condition with
+        # a real message, not something a user should meet as a traceback.
         print(f"callscope: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:  # pragma: no cover
@@ -88,7 +96,7 @@ def _build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("-o", "--out", type=Path, default=Path("reports"),
                          help="output directory (default: ./reports)")
     analyze.add_argument("--formats", default="json,txt,html",
-                         help="comma-separated: json, txt, html")
+                         help=f"comma-separated subset of: {', '.join(REPORT_FORMATS)}")
     analyze.add_argument("--whisper", default="auto",
                          choices=("auto", *BACKEND_PREFERENCE),
                          help="transcription backend (default: auto)")
@@ -117,9 +125,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _cmd_analyze(args: argparse.Namespace) -> int:
-    rubric = load_rubric(args.rubric)
-    formats = tuple(f.strip() for f in args.formats.split(",") if f.strip())
+    formats = _parse_formats(args.formats)
+    if args.transcript and args.whisper != "auto":
+        raise UsageError(
+            f"--transcript and --whisper {args.whisper} conflict; a supplied "
+            "transcript is used instead of running a model. Drop one of the two."
+        )
 
+    rubric = load_rubric(args.rubric)
     config = PipelineConfig(
         rubric=rubric,
         transcription=TranscriptionConfig(
@@ -142,12 +155,40 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
             exit_code = 1
             continue
 
-        written = write_reports(report, args.out, formats=formats)
+        try:
+            written = write_reports(report, args.out, formats=formats)
+        except OSError as exc:
+            # Read-only output directory, full disk, a path that is really a
+            # file. Report it against the input and keep going: the other
+            # recordings in the batch may write fine.
+            print(f"callscope: {path}: could not write reports: {exc}", file=sys.stderr)
+            exit_code = 1
+            continue
         if not args.quiet:
             print(render_text(report))
         for fmt, dest in written.items():
             print(f"wrote {fmt}: {dest}", file=sys.stderr)
     return exit_code
+
+
+def _parse_formats(raw: str) -> tuple[str, ...]:
+    """Validate ``--formats`` before any audio is decoded.
+
+    Raises:
+        UsageError: an unknown or empty format list. Catching this at parse time
+            means a typo costs a one-line message, not a stack trace after a
+            forty-minute transcription.
+    """
+    formats = tuple(f.strip().lower() for f in raw.split(",") if f.strip())
+    if not formats:
+        raise UsageError(f"--formats is empty; choose from {', '.join(REPORT_FORMATS)}")
+    unknown = [f for f in formats if f not in REPORT_FORMATS]
+    if unknown:
+        raise UsageError(
+            f"unknown report format(s) {', '.join(unknown)}; "
+            f"choose from {', '.join(REPORT_FORMATS)}"
+        )
+    return formats
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:

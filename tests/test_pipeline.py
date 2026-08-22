@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -171,17 +172,72 @@ def test_a_domain_agnostic_rubric_scores_the_same_call(
 # --- CLI -------------------------------------------------------------------
 
 def test_cli_doctor_reports_capabilities(capsys):
-    assert main(["doctor"]) == 0
+    """doctor must describe the machine it is on, ffmpeg present or not."""
+    code = main(["doctor"])
     out = capsys.readouterr().out
     assert "whisper preference" in out
     assert "pyannote" in out
+    # Exit 1 is the correct, documented answer when ffmpeg is missing.
+    assert code == (0 if shutil.which("ffmpeg") else 1)
 
 
 def test_cli_doctor_json_is_parseable(capsys):
-    assert main(["doctor", "--json"]) == 0
+    main(["doctor", "--json"])
     info = json.loads(capsys.readouterr().out)
-    assert info["ffmpeg"] is True
+    assert info["ffmpeg"] is bool(shutil.which("ffmpeg"))
     assert "fixture" in info["transcription_backends_available"]
+    assert info["transcription_backend_selected"] in info["transcription_backends_available"]
+
+
+def test_cli_doctor_exit_code_signals_a_missing_ffmpeg(monkeypatch, capsys):
+    """A CI gate reads the exit code, not the prose."""
+    monkeypatch.setattr("callscope.audio.shutil.which", lambda name: None)
+    assert main(["doctor"]) == 1
+    assert "MISSING (required)" in capsys.readouterr().out
+
+
+# --- CLI usage errors ------------------------------------------------------
+
+def test_cli_rejects_an_unknown_report_format(tmp_path: Path, capsys):
+    """Caught before any audio is decoded, and as a message rather than a traceback."""
+    code = main(["analyze", "x.wav", "--out", str(tmp_path), "--formats", "pdf,json"])
+    assert code == 2
+    assert "unknown report format" in capsys.readouterr().err
+
+
+def test_cli_rejects_an_empty_format_list(tmp_path: Path, capsys):
+    assert main(["analyze", "x.wav", "--out", str(tmp_path), "--formats", " , "]) == 2
+    assert "--formats is empty" in capsys.readouterr().err
+
+
+def test_cli_reports_an_unwritable_output_directory(
+    tmp_path: Path, call_wav: Path, transcript_json: Path, capsys
+):
+    """A read-only report directory is a message and an exit code, not a traceback."""
+    blocked = tmp_path / "readonly"
+    blocked.mkdir()
+    blocked.chmod(0o500)
+    try:
+        code = main([
+            "analyze", str(call_wav), "--transcript", str(transcript_json),
+            "--out", str(blocked), "--skip-normalization", "--quiet",
+        ])
+    finally:
+        blocked.chmod(0o700)
+    assert code == 1
+    assert "could not write reports" in capsys.readouterr().err
+
+
+def test_cli_rejects_a_transcript_and_a_model_backend_together(
+    tmp_path: Path, transcript_json: Path, capsys
+):
+    """Silently ignoring --whisper would be worse than refusing the combination."""
+    code = main([
+        "analyze", "x.wav", "--out", str(tmp_path),
+        "--transcript", str(transcript_json), "--whisper", "mlx",
+    ])
+    assert code == 2
+    assert "conflict" in capsys.readouterr().err
 
 
 @pytest.mark.requires_ffmpeg
@@ -261,3 +317,22 @@ def test_report_metadata_records_the_diarization_diagnostic(
     metadata = analyze_call(call_wav, config).metadata
     assert metadata["diarization_speakers"] == 2
     assert 0.0 <= metadata["diarization_separation"] <= 1.0
+
+
+def test_cluster_diarizer_cannot_report_overlap(call_wav: Path, config: PipelineConfig):
+    """Pins the limitation the README states: disjoint turns mean structural zeros.
+
+    The built-in clusterer assigns each VAD segment to exactly one speaker, so
+    the turns it emits cannot overlap and the overlap/interruption metrics are
+    always zero -- however much cross-talk the audio actually contains. The
+    fixture call has a deliberate 0.6 s overlap at 9.4-10.0 s. If this test ever
+    fails, the diarizer learned to emit overlapping turns and the README's
+    limitations section is out of date.
+    """
+    config.skip_normalization = True
+    report = analyze_call(call_wav, config)
+    assert report.paralinguistics.overlap_seconds == 0.0
+    assert report.paralinguistics.overlap_events == []
+    assert sum(report.paralinguistics.interruptions.values()) == 0
+    for prev, nxt in zip(report.turns, report.turns[1:], strict=False):
+        assert nxt.start >= prev.end - 1e-6
