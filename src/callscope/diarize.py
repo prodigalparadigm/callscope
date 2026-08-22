@@ -134,10 +134,37 @@ def pyannote_available() -> tuple[bool, str]:
     except (ImportError, ModuleNotFoundError, ValueError):
         spec = None
     if spec is None:
-        return False, "pyannote.audio is not installed (`pip install 'callscope[pyannote]'`)"
+        return False, "pyannote.audio is not installed (`pip install -e '.[pyannote]'`)"
     if not (os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN")):
         return False, "HUGGINGFACE_TOKEN is not set"
     return True, "available"
+
+
+PYANNOTE_PIPELINE = "pyannote/speaker-diarization-3.1"
+
+
+def _pyannote_token_kwarg() -> str:
+    """Name of the auth keyword ``Pipeline.from_pretrained`` expects.
+
+    pyannote.audio 4.0 renamed ``use_auth_token`` to ``token``. Both major
+    versions satisfy the ``>=3.1`` constraint, so the argument name is resolved
+    from the signature rather than assumed -- passing the wrong one is a
+    TypeError at the only point in the run where a model has already downloaded.
+    """
+    import inspect
+
+    from pyannote.audio import Pipeline  # type: ignore[import-not-found]
+
+    try:
+        params = inspect.signature(Pipeline.from_pretrained).parameters
+    except (TypeError, ValueError):
+        return "token"
+    if "token" in params:
+        return "token"
+    if "use_auth_token" in params:
+        return "use_auth_token"
+    # Signature is **kwargs-only: 4.x semantics are the forward-compatible bet.
+    return "token"
 
 
 def _diarize_pyannote(wav_path: Path) -> DiarizationResult:  # pragma: no cover - optional
@@ -146,8 +173,16 @@ def _diarize_pyannote(wav_path: Path) -> DiarizationResult:  # pragma: no cover 
 
     token = os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN")
     pipeline = Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1", use_auth_token=token
+        PYANNOTE_PIPELINE, **{_pyannote_token_kwarg(): token}
     )
+    if pipeline is None:
+        # from_pretrained returns None rather than raising when the licence has
+        # not been accepted on the Hub for this token.
+        raise DiarizationError(
+            f"pyannote returned no pipeline for {PYANNOTE_PIPELINE}. Accept the model "
+            "licence at huggingface.co/pyannote/speaker-diarization-3.1 with the account "
+            "that owns HUGGINGFACE_TOKEN."
+        )
     annotation = pipeline(str(wav_path), num_speakers=2)
 
     raw: list[tuple[float, float, str]] = [
@@ -464,14 +499,19 @@ def _assign_short_segments(
     """Give un-embeddable segments the label of the nearest embedded segment."""
     full = np.zeros(len(segments), dtype=int)
     lookup = {int(idx): int(lab) for idx, lab in zip(usable_idx, labels, strict=True)}
-    centres = {int(idx): segments[int(idx)].start for idx in usable_idx}
+    # Midpoints on both sides: comparing a neighbour's start against this
+    # segment's midpoint biases the match towards later segments.
+    centres = {
+        int(idx): (segments[int(idx)].start + segments[int(idx)].end) / 2.0
+        for idx in usable_idx
+    }
 
     for i in range(len(segments)):
         if i in lookup:
             full[i] = lookup[i]
             continue
         mid = (segments[i].start + segments[i].end) / 2.0
-        nearest = min(centres, key=lambda k: abs(centres[k] - mid))
+        nearest = min(centres, key=lambda k: (abs(centres[k] - mid), k))
         full[i] = lookup[nearest]
     return full
 

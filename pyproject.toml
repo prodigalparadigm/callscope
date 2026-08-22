@@ -28,12 +28,14 @@ openai = ["openai-whisper>=20231117"]  # reference PyTorch implementation
 
 # Optional diarization backend. Requires a HuggingFace token and manual
 # acceptance of the pyannote model licences; callscope does not need it.
+# 3.x and 4.x are both accepted: 4.0 renamed `use_auth_token` to `token`, and
+# diarize.py resolves the keyword from the signature rather than assuming one.
 pyannote = ["pyannote.audio>=3.1"]
 
 # Optional LLM judge for the semantic track.
 llm = ["anthropic>=0.40"]
 
-dev = ["pytest>=8.0", "pytest-cov>=5.0"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6"]
 
 [project.scripts]
 callscope = "callscope.cli:main"
@@ -47,6 +49,17 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/callscope"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Explicit rather than inherited, so `ruff check` is a gate that means something:
+# pycodestyle, pyflakes, isort, bugbear, pyupgrade, comprehensions, and the
+# blind-except rule. The two blind excepts that remain carry `noqa` with the
+# reason -- both are deliberate failure isolation, not swallowed errors.
+select = ["E", "F", "W", "I", "B", "UP", "C4", "BLE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
