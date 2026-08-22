@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import sys
+import types
 from typing import Any
 
 import pytest
 
-from callscope.errors import JudgeNotConfiguredError
+from callscope.errors import JudgeError, JudgeNotConfiguredError
 from callscope.rubric import parse_rubric
 from callscope.schema import SpeakerTurn, Transcript, TranscriptSegment
 from callscope.scoring import (
@@ -17,7 +19,14 @@ from callscope.scoring import (
     register_judge,
     score_transcript,
 )
-from callscope.scoring.llm_judge import RESPONSE_SCHEMA, build_prompt
+from callscope.scoring.llm_judge import (
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_TIMEOUT_SECONDS,
+    RESPONSE_SCHEMA,
+    AnthropicClient,
+    build_prompt,
+)
 
 
 def _context(segments: list[tuple[float, float, str, str]], duration: float = 60.0):
@@ -345,13 +354,148 @@ def test_build_prompt_is_pure():
     )
 
 
-def test_llm_judge_without_a_client_or_credentials_fails_clearly(monkeypatch):
+def test_llm_judge_without_the_sdk_or_credentials_fails_clearly(monkeypatch):
+    """Either missing piece must fail before any request, not mid-batch."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     rubric = parse_rubric({"id": "r", "judge": {"backend": "llm"},
                            "criteria": [{"id": "a", "patterns": ["(?!)"]}]})
     with pytest.raises(JudgeNotConfiguredError):
         LlmJudge(rubric).judge(rubric.criteria[0], _context(CONVERSATION))
+
+
+def test_llm_judge_names_the_missing_credential_when_the_sdk_is_present(monkeypatch):
+    """The SDK is not installed here, so stand one in -- otherwise this test would
+    pass on the import error and never reach the credential check it claims to
+    cover."""
+    monkeypatch.setitem(sys.modules, "anthropic", types.ModuleType("anthropic"))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    with pytest.raises(JudgeNotConfiguredError, match="ANTHROPIC_API_KEY"):
+        AnthropicClient()
+
+
+def test_anthropic_client_sets_an_explicit_timeout_and_retry_budget(monkeypatch):
+    """The SDK default is 600 s / 2 retries: too long to block a nightly batch."""
+    captured: dict[str, Any] = {}
+
+    class FakeAnthropic:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    stub = types.ModuleType("anthropic")
+    stub.Anthropic = FakeAnthropic  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "anthropic", stub)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-a-real-key")
+
+    client = AnthropicClient()
+    assert captured["timeout"] == DEFAULT_TIMEOUT_SECONDS
+    assert captured["max_retries"] == DEFAULT_MAX_RETRIES
+    assert client.model == "claude-opus-5"
+    assert client.max_tokens == DEFAULT_MAX_TOKENS
+
+
+# --- the failure modes a constrained schema does not prevent ---------------
+
+class _FakeResponse:
+    def __init__(self, *, stop_reason: str, text: str | None = None,
+                 category: str | None = None) -> None:
+        self.stop_reason = stop_reason
+        self.stop_details = types.SimpleNamespace(category=category) if category else None
+        self.content = (
+            [types.SimpleNamespace(type="text", text=text)] if text is not None else []
+        )
+
+
+def _client_returning(response: _FakeResponse) -> AnthropicClient:
+    """An AnthropicClient whose SDK call is replaced by a canned response."""
+    client = AnthropicClient.__new__(AnthropicClient)
+    client.model = "claude-opus-5"
+    client.effort = "medium"
+    client.max_tokens = 128
+    client.timeout = 1.0
+    client._client = types.SimpleNamespace(
+        messages=types.SimpleNamespace(create=lambda **kwargs: response)
+    )
+    return client
+
+
+def _complete(client: AnthropicClient):
+    return client.complete(system="s", prompt="p", schema=RESPONSE_SCHEMA)
+
+
+def test_a_refusal_is_reported_not_swallowed():
+    """Refusals arrive as HTTP 200 with stop_reason 'refusal', not as an exception."""
+    client = _client_returning(_FakeResponse(stop_reason="refusal", category="cyber"))
+    with pytest.raises(JudgeError, match="declined"):
+        _complete(client)
+
+
+def test_a_truncated_response_names_max_tokens_not_the_json_decoder():
+    """Thinking tokens count against max_tokens; the cut-off JSON is a symptom."""
+    client = _client_returning(_FakeResponse(stop_reason="max_tokens", text='{"score": 1'))
+    with pytest.raises(JudgeError, match="max_tokens"):
+        _complete(client)
+
+
+def test_a_response_with_no_text_block_is_an_error():
+    client = _client_returning(_FakeResponse(stop_reason="end_turn"))
+    with pytest.raises(JudgeError, match="no text block"):
+        _complete(client)
+
+
+def test_unparseable_json_is_an_error_not_a_crash():
+    client = _client_returning(_FakeResponse(stop_reason="end_turn", text="not json"))
+    with pytest.raises(JudgeError, match="not valid JSON"):
+        _complete(client)
+
+
+def test_a_json_scalar_where_an_object_was_required_is_rejected():
+    client = _client_returning(_FakeResponse(stop_reason="end_turn", text="42"))
+    with pytest.raises(JudgeError, match="expected an object"):
+        _complete(client)
+
+
+def test_a_non_numeric_score_from_a_custom_client_is_rejected():
+    """LlmClient is a protocol; a gateway implementation is not schema-enforced."""
+    rubric = parse_rubric({"id": "r", "judge": {"backend": "llm"},
+                           "criteria": [{"id": "a", "patterns": ["(?!)"]}]})
+    judge = LlmJudge(rubric, client=StubClient({"score": "high", "rationale": "x"}))
+    with pytest.raises(JudgeError, match="non-numeric score"):
+        judge.judge(rubric.criteria[0], _context(CONVERSATION))
+
+
+def test_a_nan_score_is_rejected_before_it_poisons_the_rollup():
+    rubric = parse_rubric({"id": "r", "judge": {"backend": "llm"},
+                           "criteria": [{"id": "a", "patterns": ["(?!)"]}]})
+    judge = LlmJudge(rubric, client=StubClient({"score": float("nan"), "rationale": "x"}))
+    with pytest.raises(JudgeError, match="NaN"):
+        judge.judge(rubric.criteria[0], _context(CONVERSATION))
+
+
+def test_a_failing_llm_criterion_is_recorded_and_the_rubric_continues():
+    """The end-to-end consequence of every failure above: one zero, not a lost call."""
+
+    class Flaky:
+        name = "llm"
+
+        def complete(self, *, system: str, prompt: str, schema: dict[str, Any]):
+            if "boom" in prompt:
+                raise JudgeError("the model declined to score this criterion")
+            return {"score": 1.0, "rationale": "fine", "evidence": []}
+
+    rubric = parse_rubric({"id": "r", "judge": {"backend": "llm"}, "criteria": [
+        {"id": "ok", "patterns": ["(?!)"]},
+        {"id": "boom", "patterns": ["(?!)"]},
+    ]})
+    result = score_transcript(
+        rubric, _context(CONVERSATION), judge=LlmJudge(rubric, client=Flaky())
+    )
+    by_id = {c.criterion_id: c for c in result.criteria}
+    assert by_id["ok"].score == 1.0
+    assert by_id["boom"].score == 0.0
+    assert "declined" in by_id["boom"].rationale
+    assert result.score_percent == 50.0
 
 
 def test_evidence_is_deduplicated_across_patterns():

@@ -19,20 +19,29 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from callscope.errors import JudgeNotConfiguredError
+from callscope.errors import JudgeError, JudgeNotConfiguredError
 from callscope.rubric import CriterionSpec, Rubric
-from callscope.schema import CriterionResult, Evidence
+from callscope.schema import CriterionResult, Evidence, TranscriptSegment
 from callscope.scoring.base import JudgeContext, register_judge
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "claude-opus-5"
-DEFAULT_MAX_TOKENS = 4096
+#: Generous because thinking tokens are billed against ``max_tokens`` and a
+#: truncated response is unparseable JSON. ``effort`` is the knob that actually
+#: controls spend; this is a ceiling, not a target.
+DEFAULT_MAX_TOKENS = 16_000
 DEFAULT_EFFORT = "medium"
+#: Wall-clock ceiling for one criterion. The SDK default is 10 minutes, which is
+#: far too long to leave a 400-file batch blocked on one stuck request.
+DEFAULT_TIMEOUT_SECONDS = 120.0
+#: Retries for 429/5xx/connection errors, handled inside the SDK with backoff.
+DEFAULT_MAX_RETRIES = 3
 
 SYSTEM_PROMPT = """\
 You are a call-quality assessor. You score one criterion at a time against a \
@@ -103,14 +112,21 @@ class AnthropicClient:
     credential.
     """
 
-    def __init__(self, *, model: str = DEFAULT_MODEL, effort: str = DEFAULT_EFFORT,
-                 max_tokens: int = DEFAULT_MAX_TOKENS) -> None:
+    def __init__(
+        self,
+        *,
+        model: str = DEFAULT_MODEL,
+        effort: str = DEFAULT_EFFORT,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+    ) -> None:
         try:
             import anthropic  # type: ignore[import-not-found]
         except ImportError as exc:  # pragma: no cover - exercised only with the extra
             raise JudgeNotConfiguredError(
                 "the llm judge backend needs the Anthropic SDK: "
-                "`pip install 'callscope[llm]'`"
+                "install it from a checkout with `pip install -e '.[llm]'`"
             ) from exc
 
         if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
@@ -119,12 +135,26 @@ class AnthropicClient:
                 "profile). Leave it unset to keep callscope fully local."
             )
 
-        self._client = anthropic.Anthropic()
+        # Timeout and retry budget are set explicitly rather than left to the
+        # SDK defaults (10 minutes, 2 retries): a QA batch needs a bounded
+        # worst case per criterion, and the wall clock a caller should expect is
+        # timeout x (max_retries + 1).
+        self._client = anthropic.Anthropic(timeout=timeout, max_retries=max_retries)
         self.model = model
         self.effort = effort
         self.max_tokens = max_tokens
+        self.timeout = timeout
 
     def complete(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        """One request, one criterion.
+
+        Raises:
+            JudgeError: the model refused, was truncated, returned no text
+                block, or returned text that is not the requested JSON. Each of
+                these is recorded against the single criterion by
+                :func:`~callscope.scoring.base.score_transcript`; the rest of the
+                rubric still runs.
+        """
         response = self._client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
@@ -135,16 +165,39 @@ class AnthropicClient:
                 "format": {"type": "json_schema", "schema": schema},
             },
         )
-        if getattr(response, "stop_reason", None) == "refusal":
+        stop_reason = getattr(response, "stop_reason", None)
+
+        # Safety classifiers can decline a request; this arrives as a 200 with
+        # stop_reason "refusal", not as an exception. Deliberately not wired to
+        # a server-side model fallback: silently rescoring a criterion on a
+        # different model would break the reproducibility the rest of the tool
+        # is built around. A refused criterion is recorded as such.
+        if stop_reason == "refusal":
             details = getattr(response, "stop_details", None)
             category = getattr(details, "category", None)
-            raise JudgeNotConfiguredError(
+            raise JudgeError(
                 f"the model declined to score this criterion (category: {category})"
             )
+
+        # Structured output guarantees the *shape* of a complete response, not
+        # that the response completes. A truncated one is invalid JSON, so name
+        # the real cause rather than surfacing a decoder error.
+        if stop_reason == "max_tokens":
+            raise JudgeError(
+                f"response hit max_tokens ({self.max_tokens}); raise judge.options.max_tokens "
+                "or narrow the criterion's scope"
+            )
+
         text = next((b.text for b in response.content if b.type == "text"), None)
         if text is None:
-            raise JudgeNotConfiguredError("model returned no text block to parse")
-        return json.loads(text)
+            raise JudgeError(f"model returned no text block to parse (stop_reason={stop_reason})")
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise JudgeError(f"model response was not valid JSON: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise JudgeError(f"model returned a {type(payload).__name__}, expected an object")
+        return payload
 
 
 class LlmJudge:
@@ -182,6 +235,8 @@ class LlmJudge:
             model=model,
             effort=str(options.get("effort", DEFAULT_EFFORT)),
             max_tokens=int(options.get("max_tokens", DEFAULT_MAX_TOKENS)),
+            timeout=float(options.get("timeout", DEFAULT_TIMEOUT_SECONDS)),
+            max_retries=int(options.get("max_retries", DEFAULT_MAX_RETRIES)),
         )
         return self._client
 
@@ -207,7 +262,17 @@ class LlmJudge:
             schema=RESPONSE_SCHEMA,
         )
 
-        raw_score = float(payload.get("score", 0.0))
+        # The schema constrains the Anthropic client's output, but LlmClient is
+        # a protocol: a self-hosted or gateway implementation can return
+        # anything. Fail with a named error rather than a bare ValueError.
+        raw = payload.get("score", 0.0)
+        try:
+            raw_score = float(raw)
+        except (TypeError, ValueError) as exc:
+            raise JudgeError(f"judge returned a non-numeric score: {raw!r}") from exc
+        if math.isnan(raw_score):
+            # NaN survives min/max unchanged and would silently poison the rollup.
+            raise JudgeError("judge returned NaN for score")
         score = min(max(raw_score, 0.0), criterion.max_score)
         ratio = score / criterion.max_score if criterion.max_score > 0 else 0.0
 
@@ -224,7 +289,7 @@ class LlmJudge:
         )
 
 
-def build_prompt(criterion: CriterionSpec, segments: list) -> str:
+def build_prompt(criterion: CriterionSpec, segments: list[TranscriptSegment]) -> str:
     """Render one criterion plus its in-scope transcript into a user message.
 
     Segments are delimited and timestamped so the model can cite them, and the

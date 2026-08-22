@@ -11,6 +11,14 @@ class CallscopeError(Exception):
     """Base class for every error raised deliberately by callscope."""
 
 
+class UsageError(CallscopeError):
+    """The command line was well-formed but asks for something impossible.
+
+    Exits 2, matching argparse's own convention for a usage problem, so a
+    scripted caller can tell "you invoked it wrong" from "the run failed".
+    """
+
+
 class FfmpegNotFoundError(CallscopeError):
     """The ``ffmpeg`` executable is not on PATH."""
 
@@ -36,4 +44,18 @@ class DiarizationError(CallscopeError):
 
 
 class JudgeNotConfiguredError(CallscopeError):
-    """A judge backend was selected but its runtime dependency is unavailable."""
+    """A judge backend was selected but its runtime dependency is unavailable.
+
+    Raised before any call is attempted: a missing SDK, a missing credential, an
+    unregistered backend name. Distinct from :class:`JudgeError`, which means the
+    judge ran and the attempt failed.
+    """
+
+
+class JudgeError(CallscopeError):
+    """A judge was invoked and failed on one criterion.
+
+    Refusal, truncation, an unparseable response, a nonsense score. Caught per
+    criterion by :func:`~callscope.scoring.base.score_transcript`, so one bad
+    criterion costs its own score and not the other thirty-nine.
+    """

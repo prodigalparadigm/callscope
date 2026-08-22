@@ -24,7 +24,7 @@ over the same call, or extending `JudgeSpec` to be per-criterion (see
 Install the extra:
 
 ```bash
-uv pip install "callscope[llm]"
+uv pip install -e ".[llm]"
 export ANTHROPIC_API_KEY=...      # or run `ant auth login`
 ```
 
@@ -36,8 +36,16 @@ judge:
   model: claude-opus-5
   options:
     effort: medium        # low | medium | high | xhigh | max
-    max_tokens: 4096
+    max_tokens: 16000     # thinking tokens count against this; a truncated
+                          # response is unparseable, so leave headroom
+    timeout: 120          # seconds, per criterion
+    max_retries: 3        # 429/5xx/connection errors, retried with backoff
 ```
+
+`timeout` and `max_retries` are set explicitly rather than left to the SDK
+defaults (600 s, 2 retries). The worst case a caller should budget for is
+`timeout x (max_retries + 1)` per criterion; the SDK-default 600 s means one
+stuck request can hold up a batch for half an hour.
 
 Nothing else changes. `analyze_call` returns the same `CallReport`, criteria
 return the same `CriterionResult` with the same evidence timestamps, and the
@@ -68,10 +76,20 @@ line prefixed with `[start-end] SPEAKER_NN:`.
 
 The response is constrained by `output_config.format` to a closed JSON schema —
 `score`, `rationale`, and an `evidence` array of `{start, end, speaker, quote}`.
-Constraining the output means parsing is total: a malformed score is prevented
-at the request rather than handled at runtime. Scores outside `[0, max_score]`
-are clamped, and evidence entries that fail to parse are dropped rather than
-failing the criterion.
+Constraining the output fixes the *shape* of a complete response; it does not
+guarantee the response completes. Four things are checked explicitly, each
+raising `JudgeError` so the criterion records the reason and the rest of the
+rubric still runs: `stop_reason == "refusal"` (safety classifiers decline with
+HTTP 200, not an exception), `stop_reason == "max_tokens"` (a truncated
+response is invalid JSON, and the useful message names the cap rather than the
+decoder), a response with no text block, and a non-numeric or NaN score — which
+a non-Anthropic `LlmClient` can legitimately produce, since the protocol is not
+schema-enforced. Scores outside `[0, max_score]` are clamped, and evidence
+entries that fail to parse are dropped rather than failing the criterion.
+
+Refusals are deliberately **not** wired to a server-side model fallback. Quietly
+rescoring a criterion on a different model would break the reproducibility the
+rest of the tool is built around; a refused criterion is recorded as refused.
 
 ### One request per criterion
 
