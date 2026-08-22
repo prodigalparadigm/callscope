@@ -184,6 +184,8 @@ def read_wav(path: str | Path, *, require_canonical: bool = True) -> AudioBuffer
 
     Raises:
         AudioFormatError: unreadable, compressed, or non-canonical WAV.
+        FileNotFoundError: ``path`` does not exist (propagated unchanged, so a
+            missing file is never mistaken for a corrupt one).
     """
     p = Path(path)
     try:
@@ -195,8 +197,6 @@ def read_wav(path: str | Path, *, require_canonical: bool = True) -> AudioBuffer
             raw = wf.readframes(frames)
     except wave.Error as exc:
         raise AudioFormatError(f"{p} is not a readable PCM WAV file: {exc}") from exc
-    except FileNotFoundError:
-        raise
     except EOFError as exc:
         raise AudioFormatError(f"{p} is truncated") from exc
 

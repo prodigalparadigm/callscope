@@ -16,9 +16,10 @@ report says why the semantic side is empty rather than failing the run.
 from __future__ import annotations
 
 import logging
+import math
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from callscope.audio import AudioBuffer, load_call_audio, read_wav
@@ -26,7 +27,7 @@ from callscope.diarize import DiarizationConfig, diarize
 from callscope.errors import TranscriptionError
 from callscope.paralinguistics import ParalinguisticConfig, analyze_paralinguistics
 from callscope.rubric import Rubric, load_rubric
-from callscope.schema import CallReport
+from callscope.schema import CallReport, Transcript
 from callscope.scoring import JudgeContext, SemanticJudge, score_transcript
 from callscope.transcribe import (
     TranscriptionConfig,
@@ -43,18 +44,13 @@ class PipelineConfig:
 
     rubric_path: str | Path | None = None
     rubric: Rubric | None = None
-    transcription: TranscriptionConfig = None  # type: ignore[assignment]
-    diarization: DiarizationConfig = None  # type: ignore[assignment]
-    paralinguistics: ParalinguisticConfig = None  # type: ignore[assignment]
+    transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
+    diarization: DiarizationConfig = field(default_factory=DiarizationConfig)
+    paralinguistics: ParalinguisticConfig = field(default_factory=ParalinguisticConfig)
     diarizer_backend: str = "auto"
     #: Skip ffmpeg when the input is already canonical 16 kHz mono PCM WAV.
     skip_normalization: bool = False
     call_id: str | None = None
-
-    def __post_init__(self) -> None:
-        self.transcription = self.transcription or TranscriptionConfig()
-        self.diarization = self.diarization or DiarizationConfig()
-        self.paralinguistics = self.paralinguistics or ParalinguisticConfig()
 
 
 def analyze_call(
@@ -137,9 +133,11 @@ def analyze_call(
             "rubric_version": rubric.version,
             "diarization_backend": diarization.backend,
             "diarization_speakers": diarization.n_speakers,
-            "diarization_separation": round(diarization.separation, 4)
-            if diarization.separation == diarization.separation  # not NaN
-            else None,
+            # The pyannote backend reports NaN here: it has no equivalent
+            # diagnostic, and NaN is not valid JSON.
+            "diarization_separation": None
+            if math.isnan(diarization.separation)
+            else round(diarization.separation, 4),
             "transcription_backend": transcript.backend,
             "transcription_model": transcript.model,
             "elapsed_seconds": round(time.monotonic() - started, 3),
@@ -162,7 +160,7 @@ def analyze_batch(
     for source in sources:
         try:
             reports.append(analyze_call(source, config))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - isolating one file is the point
             logger.warning("failed to analyze %s: %s", source, exc)
             failures.append((str(source), exc))
     return reports, failures
@@ -184,13 +182,11 @@ def _load_audio(src: Path, workdir: Path, cfg: PipelineConfig) -> tuple[AudioBuf
     return load_call_audio(src, workdir)
 
 
-def _transcribe(wav_path: Path, cfg: PipelineConfig):
+def _transcribe(wav_path: Path, cfg: PipelineConfig) -> tuple[Transcript, list[str]]:
     try:
         return transcribe(wav_path, cfg.transcription)
     except TranscriptionError as exc:
         # A transcription failure degrades the semantic track; it does not end
         # the run, because the paralinguistic track is still fully computable.
-        from callscope.schema import Transcript
-
         logger.warning("transcription failed: %s", exc)
         return Transcript(segments=[], backend="failed"), [f"transcription failed: {exc}"]

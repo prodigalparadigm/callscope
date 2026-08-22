@@ -102,7 +102,6 @@ def analyze_paralinguistics(
                 label=label,
                 turns=own,
                 total_talk=total_talk_seconds,
-                audio=audio,
                 f0=f0,
                 f0_grid=f0_grid,
                 envelope=envelope,
@@ -140,7 +139,6 @@ def _speaker_metrics(
     label: str,
     turns: list[SpeakerTurn],
     total_talk: float,
-    audio: AudioBuffer,
     f0: np.ndarray,
     f0_grid,
     envelope: np.ndarray,
@@ -280,7 +278,7 @@ def _count_interruptions(
     turns: list[SpeakerTurn], cfg: ParalinguisticConfig
 ) -> dict[str, int]:
     """Per-speaker count of turns that begin well inside another's turn."""
-    counts = {label: 0 for label in SPEAKER_LABELS}
+    counts: dict[str, int] = dict.fromkeys(SPEAKER_LABELS, 0)
     for i, intruder in enumerate(turns):
         for incumbent in turns[:i]:
             if incumbent.speaker == intruder.speaker:

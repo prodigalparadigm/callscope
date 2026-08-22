@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 
 from callscope.rubric import CriterionSpec, Rubric
-from callscope.schema import CriterionResult, Evidence
+from callscope.schema import CriterionResult, Evidence, TranscriptSegment
 from callscope.scoring.base import JudgeContext, register_judge
 
 #: Longest evidence quote retained per match. Keeps reports readable and avoids
@@ -99,7 +99,7 @@ class KeywordJudge:
             self._cache[pattern] = compiled
         return compiled
 
-    def _find(self, pattern: str, segments: list) -> list[Evidence]:
+    def _find(self, pattern: str, segments: list[TranscriptSegment]) -> list[Evidence]:
         """All segment-level matches for ``pattern``, with timestamps."""
         try:
             regex = self._compile(pattern)
@@ -126,7 +126,6 @@ class KeywordJudge:
                 )
             )
         return out
-
 
 
 def _dedupe(hits: dict[str, list[Evidence]], *, limit: int = 5) -> list[Evidence]:

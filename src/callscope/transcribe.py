@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from callscope.errors import TranscriptionError
-from callscope.schema import Transcript, TranscriptSegment
+from callscope.schema import SpeakerTurn, Transcript, TranscriptSegment
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ def select_backend(requested: str = "auto", *, config: TranscriptionConfig | Non
     if importlib.util.find_spec(module) is None:
         raise TranscriptionError(
             f"transcription backend {requested!r} requires the {module!r} package. "
-            f"Install it with `pip install 'callscope[{requested}]'`."
+            f"Install it from a checkout with `pip install -e '.[{requested}]'`."
         )
     return requested
 
@@ -138,8 +138,9 @@ def transcribe(
     if name == "null":
         warnings.append(
             "No local Whisper backend is installed, so the semantic track has no "
-            "transcript to score. Install one with `pip install 'callscope[mlx]'` "
-            "(Apple Silicon) or `pip install 'callscope[faster]'`."
+            "transcript to score. Install one from a checkout with "
+            "`pip install -e '.[mlx]'` (Apple Silicon) or `pip install -e '.[faster]'`, "
+            "or supply a transcript with --transcript."
         )
 
     backend = _build(name)
@@ -331,7 +332,7 @@ def transcript_from_dict(raw: Any, *, backend: str = "fixture") -> Transcript:
     )
 
 
-def attribute_speakers(transcript: Transcript, turns: list) -> Transcript:
+def attribute_speakers(transcript: Transcript, turns: list[SpeakerTurn]) -> Transcript:
     """Attach a speaker label to each transcript segment by maximal overlap.
 
     Segments with no overlapping turn (Whisper padding past the end of speech,

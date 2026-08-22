@@ -113,7 +113,7 @@ def score_transcript(
     for criterion in rubric.criteria:
         try:
             results.append(active.judge(criterion, context))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - isolating one criterion is the point
             results.append(
                 CriterionResult(
                     criterion_id=criterion.id,
