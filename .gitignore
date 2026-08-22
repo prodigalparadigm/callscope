@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+
+# Never commit call media or generated reports.
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.opus
+out/
+reports/
+
+# Generated report and demo output
+demo_call.*
