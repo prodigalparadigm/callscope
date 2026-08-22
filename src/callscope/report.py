@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import html
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from callscope.schema import CallReport, CriterionResult, SemanticResult
@@ -34,8 +35,10 @@ def render_text(report: CallReport, *, width: int = 78) -> str:
     out.append(rule)
     out.append(f"source            {report.source_path}")
     out.append(f"duration          {_hms(report.duration_seconds)}")
-    out.append(f"transcript        {report.transcript.backend}"
-               + (f" / {report.transcript.model}" if report.transcript.model else ""))
+    out.append(
+        f"transcript        {report.transcript.backend}"
+        + (f" / {report.transcript.model}" if report.transcript.model else "")
+    )
     out.append(f"diarization       {report.metadata.get('diarization_backend', 'unknown')}")
     out.append("")
 
@@ -43,8 +46,10 @@ def render_text(report: CallReport, *, width: int = 78) -> str:
     out.append(thin)
     out.append(f"SEMANTIC TRACK -- {sem.rubric_name} (judge: {sem.judge_backend})")
     out.append(thin)
-    out.append(f"overall           {sem.score_percent:.1f}%  "
-               f"({_passed(sem)}/{len(sem.criteria)} criteria passed)")
+    out.append(
+        f"overall           {sem.score_percent:.1f}%  "
+        f"({_passed(sem)}/{len(sem.criteria)} criteria passed)"
+    )
     out.append("")
     for c in sem.criteria:
         mark = "PASS" if c.passed else "FAIL"
@@ -52,36 +57,52 @@ def render_text(report: CallReport, *, width: int = 78) -> str:
         out.append(f"         {c.rationale}")
         for ev in c.evidence[:2]:
             speaker = ev.speaker or "?"
-            out.append(f"         @{_hms(ev.start)} {speaker}: \"{_ellipsize(ev.quote, 60)}\"")
+            out.append(f'         @{_hms(ev.start)} {speaker}: "{_ellipsize(ev.quote, 60)}"')
     out.append("")
 
     p = report.paralinguistics
     out.append(thin)
     out.append("PARALINGUISTIC TRACK -- computed from the audio signal")
     out.append(thin)
-    out.append(f"speech / silence  {_hms(p.speech_seconds)} / {_hms(p.silence_seconds)}"
-               f"  ({p.silence_ratio * 100:.1f}% silent)")
-    out.append(f"longest silence   {p.longest_silence_seconds:.2f}s"
-               f"   (p50 {p.silence_p50_seconds:.2f}s, p90 {p.silence_p90_seconds:.2f}s)")
+    out.append(
+        f"speech / silence  {_hms(p.speech_seconds)} / {_hms(p.silence_seconds)}"
+        f"  ({p.silence_ratio * 100:.1f}% silent)"
+    )
+    out.append(
+        f"longest silence   {p.longest_silence_seconds:.2f}s"
+        f"   (p50 {p.silence_p50_seconds:.2f}s, p90 {p.silence_p90_seconds:.2f}s)"
+    )
     out.append(f"dead air events   {len(p.dead_air_events)}")
     out.append(f"overlap           {p.overlap_seconds:.2f}s across {len(p.overlap_events)} events")
-    out.append("interruptions     "
-               + ", ".join(f"{k} {v}" for k, v in sorted(p.interruptions.items())))
-    latency = (f"{p.mean_response_latency_seconds:.2f}s"
-               if p.mean_response_latency_seconds is not None else "n/a")
+    out.append(
+        "interruptions     " + ", ".join(f"{k} {v}" for k, v in sorted(p.interruptions.items()))
+    )
+    latency = (
+        f"{p.mean_response_latency_seconds:.2f}s"
+        if p.mean_response_latency_seconds is not None
+        else "n/a"
+    )
     out.append(f"mean response lag {latency}")
     out.append("")
     for sp in p.speakers:
         out.append(f"  {sp.speaker}")
-        out.append(f"    talk time     {_hms(sp.talk_time_seconds)}"
-                   f"  ({sp.talk_time_ratio * 100:.1f}% of speech)")
-        out.append(f"    turns         {sp.turn_count}"
-                   f"  (mean {sp.mean_turn_seconds:.2f}s, longest {sp.longest_turn_seconds:.2f}s)")
-        out.append(f"    speech rate   {sp.syllable_rate_hz:.2f} syll/s"
-                   + (f", {sp.words_per_minute:.0f} wpm" if sp.words_per_minute else ""))
+        out.append(
+            f"    talk time     {_hms(sp.talk_time_seconds)}"
+            f"  ({sp.talk_time_ratio * 100:.1f}% of speech)"
+        )
+        out.append(
+            f"    turns         {sp.turn_count}"
+            f"  (mean {sp.mean_turn_seconds:.2f}s, longest {sp.longest_turn_seconds:.2f}s)"
+        )
+        out.append(
+            f"    speech rate   {sp.syllable_rate_hz:.2f} syll/s"
+            + (f", {sp.words_per_minute:.0f} wpm" if sp.words_per_minute else "")
+        )
         if sp.f0_mean_hz is not None:
-            out.append(f"    pitch         {sp.f0_mean_hz:.1f} Hz"
-                       f"  (sd {sp.f0_std_hz:.1f} Hz / {sp.f0_std_semitones:.2f} st)")
+            out.append(
+                f"    pitch         {sp.f0_mean_hz:.1f} Hz"
+                f"  (sd {sp.f0_std_hz:.1f} Hz / {sp.f0_std_semitones:.2f} st)"
+            )
         else:
             out.append("    pitch         no voiced frames")
 
@@ -104,7 +125,7 @@ def render_html(report: CallReport) -> str:
     e = html.escape
 
     criteria_rows = "\n".join(
-        f"""      <tr class="{'pass' if c.passed else 'fail'}">
+        f"""      <tr class="{"pass" if c.passed else "fail"}">
         <td>{e(c.name)}</td>
         <td class="num">{c.score:g} / {c.max_score:g}</td>
         <td class="num">{c.weight:g}</td>
@@ -121,9 +142,9 @@ def render_html(report: CallReport) -> str:
         <td class="num">{sp.talk_time_ratio * 100:.1f}%</td>
         <td class="num">{sp.turn_count}</td>
         <td class="num">{sp.syllable_rate_hz:.2f}</td>
-        <td class="num">{'-' if sp.words_per_minute is None else f'{sp.words_per_minute:.0f}'}</td>
-        <td class="num">{'-' if sp.f0_mean_hz is None else f'{sp.f0_mean_hz:.1f}'}</td>
-        <td class="num">{'-' if sp.f0_std_semitones is None else f'{sp.f0_std_semitones:.2f}'}</td>
+        <td class="num">{"-" if sp.words_per_minute is None else f"{sp.words_per_minute:.0f}"}</td>
+        <td class="num">{"-" if sp.f0_mean_hz is None else f"{sp.f0_mean_hz:.1f}"}</td>
+        <td class="num">{"-" if sp.f0_std_semitones is None else f"{sp.f0_std_semitones:.2f}"}</td>
       </tr>"""
         for sp in p.speakers
     )
@@ -170,7 +191,7 @@ def render_html(report: CallReport) -> str:
 <h1>callscope — {e(report.call_id)}</h1>
 <p class="sub">{e(report.source_path)} · {_hms(report.duration_seconds)} ·
 transcript: {e(report.transcript.backend)} ·
-diarization: {e(str(report.metadata.get('diarization_backend', 'unknown')))}</p>
+diarization: {e(str(report.metadata.get("diarization_backend", "unknown")))}</p>
 
 <section>
   <h2>Semantic track — {e(sem.rubric_name)}</h2>
@@ -197,10 +218,12 @@ diarization: {e(str(report.metadata.get('diarization_backend', 'unknown')))}</p>
     <dt>Dead air events</dt><dd>{len(p.dead_air_events)}</dd>
     <dt>Overlap</dt><dd>{p.overlap_seconds:.2f}s over {len(p.overlap_events)} events</dd>
     <dt>Interruptions</dt>
-      <dd>{e(', '.join(f'{k}: {v}' for k, v in sorted(p.interruptions.items())))}</dd>
+      <dd>{e(", ".join(f"{k}: {v}" for k, v in sorted(p.interruptions.items())))}</dd>
     <dt>Mean response lag</dt><dd>{
-      'n/a' if p.mean_response_latency_seconds is None
-      else f'{p.mean_response_latency_seconds:.2f}s'}</dd>
+        "n/a"
+        if p.mean_response_latency_seconds is None
+        else f"{p.mean_response_latency_seconds:.2f}s"
+    }</dd>
   </dl>
   <div class="wrap"><table>
     <thead><tr><th>Speaker</th><th>Talk time</th><th>Share</th><th>Turns</th>
@@ -247,7 +270,11 @@ def write_reports(
 
 #: Bound to REPORT_FORMATS at import time so the CLI's advertised choices and
 #: the renderers that actually exist cannot drift apart silently.
-_RENDERERS = {"json": render_json, "txt": render_text, "html": render_html}
+_RENDERERS: dict[str, Callable[[CallReport], str]] = {
+    "json": render_json,
+    "txt": render_text,
+    "html": render_html,
+}
 if set(_RENDERERS) != set(REPORT_FORMATS):  # pragma: no cover - import-time invariant
     raise RuntimeError("REPORT_FORMATS and the renderer table disagree")
 

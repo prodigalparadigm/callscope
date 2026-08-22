@@ -212,7 +212,8 @@ class CallReport:
 
     def to_dict(self) -> dict[str, Any]:
         """Recursively convert to plain JSON-serializable Python."""
-        return _asdict(self)
+        converted: dict[str, Any] = _asdict(self)
+        return converted
 
 
 def _asdict(obj: Any) -> Any:

@@ -88,8 +88,14 @@ def probe_duration(path: str | Path, *, timeout: float = 60.0) -> float | None:
     if ffprobe is None:
         return None
     cmd = [
-        ffprobe, "-v", "error", "-show_entries", "format=duration",
-        "-of", "json", str(path),
+        ffprobe,
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "json",
+        str(path),
     ]
     try:
         proc = subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)
@@ -142,17 +148,23 @@ def normalize_audio(
         ffmpeg_path(),
         "-nostdin",
         "-hide_banner",
-        "-loglevel", "error",
+        "-loglevel",
+        "error",
         "-y" if overwrite else "-n",
-        "-i", str(src),
+        "-i",
+        str(src),
     ]
     if downmix:
         cmd += ["-ac", str(TARGET_CHANNELS)]
     cmd += [
-        "-ar", str(sample_rate),
-        "-acodec", "pcm_s16le",
-        "-map_metadata", "-1",  # strip tags; call recordings carry PII in metadata
-        "-f", "wav",
+        "-ar",
+        str(sample_rate),
+        "-acodec",
+        "pcm_s16le",
+        "-map_metadata",
+        "-1",  # strip tags; call recordings carry PII in metadata
+        "-f",
+        "wav",
         str(dst),
     ]
 

@@ -175,9 +175,7 @@ class AnthropicClient:
         if stop_reason == "refusal":
             details = getattr(response, "stop_details", None)
             category = getattr(details, "category", None)
-            raise JudgeError(
-                f"the model declined to score this criterion (category: {category})"
-            )
+            raise JudgeError(f"the model declined to score this criterion (category: {category})")
 
         # Structured output guarantees the *shape* of a complete response, not
         # that the response completes. A truncated one is invalid JSON, so name

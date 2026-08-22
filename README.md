@@ -8,12 +8,6 @@ Call QA at most organizations means a supervisor listening to a 2% sample and fi
 
 callscope scores every call, deterministically, without the audio leaving the machine.
 
-## No audio leaves the machine
-
-Normalization, transcription, diarization, and both scoring tracks run locally. There is no telemetry, no model download at scoring time beyond the Whisper weights your chosen backend caches, and no network call in the default configuration.
-
-The single exception is opt-in and off by default: if a rubric sets `judge: {backend: llm}`, transcript excerpts for that rubric's criteria are sent to the configured API. Nothing else ever is, and the generated report says so in its footer when that path is active.
-
 ## Quickstart
 
 Requires Python 3.12 and `ffmpeg` on PATH (`brew install ffmpeg` / `apt install ffmpeg`).
@@ -46,12 +40,19 @@ every install line above is `-e "."` and not a package name.
 Run the checks:
 
 ```bash
-python -m pytest        # 202 tests, ~5 s, no network, no credentials
-ruff check src tests    # rule set is pinned in pyproject.toml
+python -m pytest                        # 202 tests, no network, no credentials
+ruff check . && ruff format --check .   # rule set pinned in pyproject.toml
+mypy                                    # strict, src only
 ```
 
 The suite runs without ffmpeg too: the twelve tests that shell out to it are
 marked `requires_ffmpeg` and skip cleanly when it is absent.
+
+## No audio leaves the machine
+
+Normalization, transcription, diarization, and both scoring tracks run locally. There is no telemetry, no model download at scoring time beyond the Whisper weights your chosen backend caches, and no network call in the default configuration.
+
+The single exception is opt-in and off by default: if a rubric sets `judge: {backend: llm}`, transcript excerpts for that rubric's criteria are sent to the configured API. Nothing else ever is, and the generated report says so in its footer when that path is active.
 
 ## How it works
 
@@ -83,18 +84,6 @@ flowchart TD
 
 *Paralinguistic* — computed from the signal, never from the text: talk-time seconds and ratio, turn counts, overlap seconds and events, per-speaker interruption counts, silence distribution (p50/p90/longest) and dead-air events, mean response latency, syllable-nucleus speech rate from the amplitude envelope, and F0 mean plus variability in both Hz and semitones. The overlap and interruption metrics depend on a diarizer that emits overlapping turns; the default one does not — see Limitations.
 
-## Design decisions
-
-- **`k=2` is a constraint, not a hint, and determinism outranks average accuracy.** Fixing the speaker count removes the estimation step that dominates general-purpose diarization error and lets the clusterer be fully deterministic: no random restarts, so the initialization is decisive rather than merely convenient. Farthest-pair init is the obvious deterministic choice and it is the wrong one — the farthest-apart pair of segments in a real call is usually one outlier (cross-talk, a cough) against everything else, and 2-means then converges with that outlier alone in its own cluster. Splitting at the weighted median of PC1 cannot isolate a single point. Relatedly, a between-over-within centroid ratio is useless as a single-speaker guard, because 2-means maximizes exactly that quantity by construction and scores a monologue about as well as a real two-party call; the silhouette coefficient collapses when the data has no real bimodality, which is what the guard needs.
-
-- **pyannote is optional, not required.** pyannote is more accurate than the clustering here, and the README says so plainly below. But it needs a HuggingFace token and manual acceptance of two model licences, which means a reviewer who clones this repo cannot run it. Making the accurate-but-gated backend optional and the adequate-but-free backend default is the trade that keeps the tool actually runnable. `--diarizer pyannote` uses it when a token is present.
-
-- **The two tracks never see each other's inputs.** The semantic judge receives a `JudgeContext` that deliberately excludes the audio buffer; the paralinguistic analyzer takes the transcript only for words-per-minute and works fine without it. Keeping them separable is what makes a disagreement between them informative — "the agent said all the right words but talked for 80% of the call" is the finding a supervisor actually wants, and it is only expressible if the two numbers were derived independently.
-
-- **Transcription failure degrades the run instead of ending it.** No Whisper backend installed, or a model that crashes, produces an empty transcript, a zeroed semantic track, an explicit warning in the report, and a complete paralinguistic profile. Similarly, a judge that raises on one criterion records that criterion as a zero-with-reason and lets the other criteria finish. Batch QA jobs fail on one file out of four hundred; the design assumption is that this happens, not that it doesn't.
-
-- **The LLM judge interface exists before the LLM judge is needed.** `SemanticJudge` is a two-method protocol with a name registry. The shipped keyword judge and the shipped Anthropic-backed judge both implement it, and switching between them is a line in the rubric file. That was worth building up front because the alternative — regex scoring wired directly into the pipeline — is the version that has to be rewritten rather than reconfigured.
-
 ## Semantic track: keyword now, LLM when you need it
 
 The default judge matches user-supplied regexes against in-scope transcript segments and emits timestamped evidence for every hit. It is fast, free, offline, and perfectly reproducible. It also matches phrasings rather than meaning, and will miss "I'll get that back out to you today at our expense" if your pattern expected "reship".
@@ -110,6 +99,18 @@ judge:
 ```
 
 and install the extra (`uv pip install -e ".[llm]"`). Nothing else changes — same `CriterionResult`, same evidence timestamps, same report. `docs/llm-judge.md` covers the prompt contract, the JSON schema the model is constrained to, and how to point the same interface at a self-hosted model instead.
+
+## Design decisions
+
+- **`k=2` is a constraint, not a hint, and determinism outranks average accuracy.** Fixing the speaker count removes the estimation step that dominates general-purpose diarization error and lets the clusterer be fully deterministic: no random restarts, so the initialization is decisive rather than merely convenient. Farthest-pair init is the obvious deterministic choice and it is the wrong one — the farthest-apart pair of segments in a real call is usually one outlier (cross-talk, a cough) against everything else, and 2-means then converges with that outlier alone in its own cluster. Splitting at the weighted median of PC1 cannot isolate a single point. Relatedly, a between-over-within centroid ratio is useless as a single-speaker guard, because 2-means maximizes exactly that quantity by construction and scores a monologue about as well as a real two-party call; the silhouette coefficient collapses when the data has no real bimodality, which is what the guard needs.
+
+- **pyannote is optional, not required.** pyannote is more accurate than the clustering here, and the README says so plainly below. But it needs a HuggingFace token and manual acceptance of two model licences, which means a reviewer who clones this repo cannot run it. Making the accurate-but-gated backend optional and the adequate-but-free backend default is the trade that keeps the tool actually runnable. `--diarizer pyannote` uses it when a token is present.
+
+- **The two tracks never see each other's inputs.** The semantic judge receives a `JudgeContext` that deliberately excludes the audio buffer; the paralinguistic analyzer takes the transcript only for words-per-minute and works fine without it. Keeping them separable is what makes a disagreement between them informative — "the agent said all the right words but talked for 80% of the call" is the finding a supervisor actually wants, and it is only expressible if the two numbers were derived independently.
+
+- **Transcription failure degrades the run instead of ending it.** No Whisper backend installed, or a model that crashes, produces an empty transcript, a zeroed semantic track, an explicit warning in the report, and a complete paralinguistic profile. Similarly, a judge that raises on one criterion records that criterion as a zero-with-reason and lets the other criteria finish. Batch QA jobs fail on one file out of four hundred; the design assumption is that this happens, not that it doesn't.
+
+- **The LLM judge interface exists before the LLM judge is needed.** `SemanticJudge` is a two-method protocol with a name registry. The shipped keyword judge and the shipped Anthropic-backed judge both implement it, and switching between them is a line in the rubric file. That was worth building up front because the alternative — regex scoring wired directly into the pipeline — is the version that has to be rewritten rather than reconfigured.
 
 ## Limitations
 
@@ -141,4 +142,4 @@ Read this section before trusting a number out of this tool.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. Copyright (c) 2026 Kathleen Bartin. See [LICENSE](LICENSE).

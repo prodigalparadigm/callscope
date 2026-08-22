@@ -116,8 +116,9 @@ def test_read_wav_rejects_non_wav(tmp_path: Path):
 
 def test_write_then_read_roundtrip(tmp_path: Path):
     t = np.arange(TARGET_SAMPLE_RATE) / TARGET_SAMPLE_RATE
-    original = AudioBuffer((0.5 * np.sin(2 * np.pi * 200 * t)).astype(np.float32),
-                           TARGET_SAMPLE_RATE)
+    original = AudioBuffer(
+        (0.5 * np.sin(2 * np.pi * 200 * t)).astype(np.float32), TARGET_SAMPLE_RATE
+    )
     path = write_wav(tmp_path / "rt.wav", original)
     restored = read_wav(path)
     assert restored.sample_rate == original.sample_rate

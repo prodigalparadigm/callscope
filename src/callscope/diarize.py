@@ -153,7 +153,7 @@ def _pyannote_token_kwarg() -> str:
     """
     import inspect
 
-    from pyannote.audio import Pipeline  # type: ignore[import-not-found]
+    from pyannote.audio import Pipeline
 
     try:
         params = inspect.signature(Pipeline.from_pretrained).parameters
@@ -169,12 +169,10 @@ def _pyannote_token_kwarg() -> str:
 
 def _diarize_pyannote(wav_path: Path) -> DiarizationResult:  # pragma: no cover - optional
     """Run pyannote's pretrained pipeline pinned to exactly two speakers."""
-    from pyannote.audio import Pipeline  # type: ignore[import-not-found]
+    from pyannote.audio import Pipeline
 
     token = os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN")
-    pipeline = Pipeline.from_pretrained(
-        PYANNOTE_PIPELINE, **{_pyannote_token_kwarg(): token}
-    )
+    pipeline = Pipeline.from_pretrained(PYANNOTE_PIPELINE, **{_pyannote_token_kwarg(): token})
     if pipeline is None:
         # from_pretrained returns None rather than raising when the licence has
         # not been accepted on the Hub for this token.
@@ -245,9 +243,7 @@ def _diarize_cluster(audio: AudioBuffer, cfg: DiarizationConfig) -> DiarizationR
     usable_idx = np.flatnonzero(usable)
 
     if len(usable_idx) < 2:
-        warnings.append(
-            "fewer than two segments long enough to embed; reporting a single speaker"
-        )
+        warnings.append("fewer than two segments long enough to embed; reporting a single speaker")
         turns = [SpeakerTurn(s.start, s.end, SPEAKER_LABELS[0]) for s in segments]
         return DiarizationResult(
             turns=_merge_adjacent(turns),
@@ -341,9 +337,7 @@ def _segment_embeddings(
         pitch_mean = float(voiced.mean()) if voiced.size else global_log_f0
         pitch_std = float(voiced.std()) if voiced.size > 1 else 0.0
 
-        out[i] = np.concatenate(
-            [block.mean(axis=0), block.std(axis=0), [pitch_mean, pitch_std]]
-        )
+        out[i] = np.concatenate([block.mean(axis=0), block.std(axis=0), [pitch_mean, pitch_std]])
         usable[i] = seg.duration >= MIN_EMBEDDING_SECONDS and voiced.size > 0
 
     if usable.any():
@@ -369,9 +363,7 @@ def _block_scales(n_coeffs: int, cfg: DiarizationConfig) -> np.ndarray:
         (n_coeffs, cfg.mfcc_std_weight),
         (2, cfg.pitch_weight),
     )
-    return np.concatenate(
-        [np.full(dim, weight / np.sqrt(dim)) for dim, weight in blocks]
-    )
+    return np.concatenate([np.full(dim, weight / np.sqrt(dim)) for dim, weight in blocks])
 
 
 def _two_means(
@@ -502,8 +494,7 @@ def _assign_short_segments(
     # Midpoints on both sides: comparing a neighbour's start against this
     # segment's midpoint biases the match towards later segments.
     centres = {
-        int(idx): (segments[int(idx)].start + segments[int(idx)].end) / 2.0
-        for idx in usable_idx
+        int(idx): (segments[int(idx)].start + segments[int(idx)].end) / 2.0 for idx in usable_idx
     }
 
     for i in range(len(segments)):

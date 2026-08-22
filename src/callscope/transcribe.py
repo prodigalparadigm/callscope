@@ -218,7 +218,7 @@ class MlxWhisperBackend:
         return importlib.util.find_spec("mlx_whisper") is not None
 
     def transcribe(self, wav_path: Path, config: TranscriptionConfig) -> Transcript:
-        import mlx_whisper  # type: ignore[import-not-found]
+        import mlx_whisper
 
         model = config.resolved_model(self.name)
         result = mlx_whisper.transcribe(
@@ -241,17 +241,13 @@ class FasterWhisperBackend:
         return importlib.util.find_spec("faster_whisper") is not None
 
     def transcribe(self, wav_path: Path, config: TranscriptionConfig) -> Transcript:
-        from faster_whisper import WhisperModel  # type: ignore[import-not-found]
+        from faster_whisper import WhisperModel
 
         model_name = config.resolved_model(self.name) or "base.en"
         model = WhisperModel(model_name, device="auto", compute_type="int8")
-        segments, info = model.transcribe(
-            str(wav_path), language=config.language, vad_filter=False
-        )
+        segments, info = model.transcribe(str(wav_path), language=config.language, vad_filter=False)
         out = [
-            TranscriptSegment(
-                start=float(s.start), end=float(s.end), text=str(s.text).strip()
-            )
+            TranscriptSegment(start=float(s.start), end=float(s.end), text=str(s.text).strip())
             for s in segments
             if float(s.end) > float(s.start)
         ]
@@ -272,7 +268,7 @@ class OpenAiWhisperBackend:
         return importlib.util.find_spec("whisper") is not None
 
     def transcribe(self, wav_path: Path, config: TranscriptionConfig) -> Transcript:
-        import whisper  # type: ignore[import-not-found]
+        import whisper
 
         model_name = config.resolved_model(self.name) or "base.en"
         model = whisper.load_model(model_name)
@@ -295,9 +291,7 @@ def transcript_from_dict(raw: Any, *, backend: str = "fixture") -> Transcript:
         raw_segments = raw.get("segments", [])
         language = raw.get("language")
     else:
-        raise TranscriptionError(
-            f"expected a transcript object or list, got {type(raw).__name__}"
-        )
+        raise TranscriptionError(f"expected a transcript object or list, got {type(raw).__name__}")
 
     if not isinstance(raw_segments, list):
         raise TranscriptionError("transcript 'segments' must be a list")
@@ -355,9 +349,7 @@ def attribute_speakers(transcript: Transcript, turns: list[SpeakerTurn]) -> Tran
                 best_overlap, best_turn = overlap, turn
         if best_turn is None:
             mid = (seg.start + seg.end) / 2.0
-            best_turn = min(
-                ordered, key=lambda t: abs(((t.start + t.end) / 2.0) - mid)
-            )
+            best_turn = min(ordered, key=lambda t: abs(((t.start + t.end) / 2.0) - mid))
         attributed.append(
             TranscriptSegment(
                 start=seg.start, end=seg.end, text=seg.text, speaker=best_turn.speaker

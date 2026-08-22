@@ -122,8 +122,7 @@ that is the single chokepoint every outbound request passes through.
 
 ```python
 class LlmClient(Protocol):
-    def complete(self, *, system: str, prompt: str,
-                 schema: dict[str, Any]) -> dict[str, Any]: ...
+    def complete(self, *, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]: ...
 ```
 
 Anything that satisfies it works — a self-hosted model behind vLLM, an internal

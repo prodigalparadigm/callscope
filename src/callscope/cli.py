@@ -15,6 +15,7 @@ import logging
 import sys
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 from callscope import __version__
 from callscope.audio import ffmpeg_available, write_wav
@@ -91,36 +92,69 @@ def _build_parser() -> argparse.ArgumentParser:
 
     analyze = sub.add_parser("analyze", help="score recordings against a rubric")
     analyze.add_argument("inputs", nargs="+", type=Path, help="audio files")
-    analyze.add_argument("-r", "--rubric", type=Path, default=DEFAULT_RUBRIC,
-                         help=f"rubric YAML/JSON (default: {DEFAULT_RUBRIC.name})")
-    analyze.add_argument("-o", "--out", type=Path, default=Path("reports"),
-                         help="output directory (default: ./reports)")
-    analyze.add_argument("--formats", default="json,txt,html",
-                         help=f"comma-separated subset of: {', '.join(REPORT_FORMATS)}")
-    analyze.add_argument("--whisper", default="auto",
-                         choices=("auto", *BACKEND_PREFERENCE),
-                         help="transcription backend (default: auto)")
+    analyze.add_argument(
+        "-r",
+        "--rubric",
+        type=Path,
+        default=DEFAULT_RUBRIC,
+        help=f"rubric YAML/JSON (default: {DEFAULT_RUBRIC.name})",
+    )
+    analyze.add_argument(
+        "-o",
+        "--out",
+        type=Path,
+        default=Path("reports"),
+        help="output directory (default: ./reports)",
+    )
+    analyze.add_argument(
+        "--formats",
+        default="json,txt,html",
+        help=f"comma-separated subset of: {', '.join(REPORT_FORMATS)}",
+    )
+    analyze.add_argument(
+        "--whisper",
+        default="auto",
+        choices=("auto", *BACKEND_PREFERENCE),
+        help="transcription backend (default: auto)",
+    )
     analyze.add_argument("--model", default=None, help="whisper model id or path")
     analyze.add_argument("--language", default=None, help="force a language code, e.g. en")
-    analyze.add_argument("--transcript", type=Path, default=None,
-                         help="use this JSON transcript instead of running a model")
-    analyze.add_argument("--diarizer", default="auto",
-                         choices=("auto", "cluster", "pyannote"),
-                         help="diarization backend (default: auto)")
-    analyze.add_argument("--skip-normalization", action="store_true",
-                         help="input is already 16 kHz mono 16-bit PCM WAV")
-    analyze.add_argument("--quiet", action="store_true",
-                         help="do not print the text summary to stdout")
+    analyze.add_argument(
+        "--transcript",
+        type=Path,
+        default=None,
+        help="use this JSON transcript instead of running a model",
+    )
+    analyze.add_argument(
+        "--diarizer",
+        default="auto",
+        choices=("auto", "cluster", "pyannote"),
+        help="diarization backend (default: auto)",
+    )
+    analyze.add_argument(
+        "--skip-normalization",
+        action="store_true",
+        help="input is already 16 kHz mono 16-bit PCM WAV",
+    )
+    analyze.add_argument(
+        "--quiet", action="store_true", help="do not print the text summary to stdout"
+    )
 
     doctor = sub.add_parser("doctor", help="report available backends")
     doctor.add_argument("--json", action="store_true", help="machine-readable output")
 
     demo = sub.add_parser("demo", help="synthesize a call and score it end to end")
-    demo.add_argument("-o", "--out", type=Path, default=Path("reports"),
-                      help="output directory (default: ./reports)")
+    demo.add_argument(
+        "-o",
+        "--out",
+        type=Path,
+        default=Path("reports"),
+        help="output directory (default: ./reports)",
+    )
     demo.add_argument("-r", "--rubric", type=Path, default=DEFAULT_RUBRIC)
-    demo.add_argument("--keep-audio", type=Path, default=None,
-                      help="also write the synthesized WAV here")
+    demo.add_argument(
+        "--keep-audio", type=Path, default=None, help="also write the synthesized WAV here"
+    )
     return parser
 
 
@@ -193,7 +227,7 @@ def _parse_formats(raw: str) -> tuple[str, ...]:
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
     pyannote_ok, pyannote_reason = pyannote_available()
-    info = {
+    info: dict[str, Any] = {
         "version": __version__,
         "ffmpeg": ffmpeg_available(),
         "transcription_backends_available": available_backends(),

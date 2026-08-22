@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from callscope.audio import AudioBuffer
-from callscope.features import amplitude_envelope, estimate_f0
+from callscope.features import FrameGrid, amplitude_envelope, estimate_f0
 from callscope.schema import (
     SPEAKER_LABELS,
     Interval,
@@ -140,9 +140,9 @@ def _speaker_metrics(
     turns: list[SpeakerTurn],
     total_talk: float,
     f0: np.ndarray,
-    f0_grid,
+    f0_grid: FrameGrid,
     envelope: np.ndarray,
-    env_grid,
+    env_grid: FrameGrid,
     transcript: Transcript | None,
     cfg: ParalinguisticConfig,
 ) -> SpeakerParalinguistics:
@@ -168,6 +168,9 @@ def _speaker_metrics(
         )
 
     pitch = np.array(pitch_values, dtype=np.float64)
+    f0_mean: float | None
+    f0_std: float | None
+    f0_std_semitones: float | None
     if pitch.size >= 2:
         f0_mean = float(pitch.mean())
         f0_std = float(pitch.std())
@@ -178,7 +181,9 @@ def _speaker_metrics(
     elif pitch.size == 1:
         f0_mean, f0_std, f0_std_semitones = float(pitch[0]), 0.0, 0.0
     else:
-        f0_mean = f0_std = f0_std_semitones = None
+        f0_mean = None
+        f0_std = None
+        f0_std_semitones = None
 
     wpm: float | None = None
     if transcript is not None and talk > 0:
@@ -274,9 +279,7 @@ def _overlap_events(turns: list[SpeakerTurn], min_seconds: float) -> list[Interv
     return _merge_intervals(events)
 
 
-def _count_interruptions(
-    turns: list[SpeakerTurn], cfg: ParalinguisticConfig
-) -> dict[str, int]:
+def _count_interruptions(turns: list[SpeakerTurn], cfg: ParalinguisticConfig) -> dict[str, int]:
     """Per-speaker count of turns that begin well inside another's turn."""
     counts: dict[str, int] = dict.fromkeys(SPEAKER_LABELS, 0)
     for i, intruder in enumerate(turns):

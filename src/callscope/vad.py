@@ -9,6 +9,7 @@ audio typical of recorded business calls it is adequate. See README limitations.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -109,7 +110,9 @@ def _hysteresis(energy: np.ndarray, *, onset: float, offset: float) -> np.ndarra
     return active
 
 
-def _runs_to_intervals(mask: np.ndarray, frame_to_time, hop: float) -> list[Interval]:
+def _runs_to_intervals(
+    mask: np.ndarray, frame_to_time: Callable[[int], float], hop: float
+) -> list[Interval]:
     """Convert a boolean frame mask into time intervals."""
     if not mask.any():
         return []

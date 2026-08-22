@@ -25,22 +25,28 @@ def report(call_audio) -> CallReport:
         segments=[
             TranscriptSegment(0.0, 6.0, "Thanks for calling, this is Alex.", "SPEAKER_00"),
             TranscriptSegment(6.5, 10.0, "My order has not arrived.", "SPEAKER_01"),
-            TranscriptSegment(14.0, 20.0, "I will reship it at no charge. Goodbye.",
-                              "SPEAKER_00"),
+            TranscriptSegment(14.0, 20.0, "I will reship it at no charge. Goodbye.", "SPEAKER_00"),
         ],
         backend="fixture",
         model="test-model",
         language="en",
     )
-    rubric = parse_rubric({
-        "id": "r", "name": "Test rubric",
-        "criteria": [
-            {"id": "greeting", "name": "Greeting", "patterns": [r"thanks for calling"]},
-            {"id": "resolution", "name": "Resolution", "patterns": [r"no charge"],
-             "weight": 2.0},
-            {"id": "missing", "name": "Never satisfied", "patterns": [r"impossible"]},
-        ],
-    })
+    rubric = parse_rubric(
+        {
+            "id": "r",
+            "name": "Test rubric",
+            "criteria": [
+                {"id": "greeting", "name": "Greeting", "patterns": [r"thanks for calling"]},
+                {
+                    "id": "resolution",
+                    "name": "Resolution",
+                    "patterns": [r"no charge"],
+                    "weight": 2.0,
+                },
+                {"id": "missing", "name": "Never satisfied", "patterns": [r"impossible"]},
+            ],
+        }
+    )
     semantic = score_transcript(
         rubric, JudgeContext(transcript, turns, call_audio.duration, "unit-test")
     )
@@ -58,6 +64,7 @@ def report(call_audio) -> CallReport:
 
 
 # --- JSON: the contract ----------------------------------------------------
+
 
 def test_json_is_valid_and_round_trips(report: CallReport):
     parsed = json.loads(render_json(report))
@@ -86,10 +93,19 @@ def test_json_carries_evidence_timestamps(report: CallReport):
 def test_json_carries_the_full_paralinguistic_profile(report: CallReport):
     profile = json.loads(render_json(report))["paralinguistics"]
     for key in (
-        "duration_seconds", "speech_seconds", "silence_seconds", "silence_ratio",
-        "longest_silence_seconds", "silence_p50_seconds", "silence_p90_seconds",
-        "dead_air_events", "overlap_seconds", "overlap_events", "interruptions",
-        "mean_response_latency_seconds", "speakers",
+        "duration_seconds",
+        "speech_seconds",
+        "silence_seconds",
+        "silence_ratio",
+        "longest_silence_seconds",
+        "silence_p50_seconds",
+        "silence_p90_seconds",
+        "dead_air_events",
+        "overlap_seconds",
+        "overlap_events",
+        "interruptions",
+        "mean_response_latency_seconds",
+        "speakers",
     ):
         assert key in profile, f"missing paralinguistic field {key}"
     assert len(profile["speakers"]) == 2
@@ -112,6 +128,7 @@ def test_json_has_no_nan_or_infinity(report: CallReport):
 
 
 # --- text view -------------------------------------------------------------
+
 
 def test_text_report_shows_both_tracks(report: CallReport):
     text = render_text(report)
@@ -139,9 +156,13 @@ def test_text_report_survives_an_empty_transcript(call_audio):
     empty = Transcript()
     semantic = score_transcript(rubric, JudgeContext(empty, [], 5.0, "empty"))
     report = CallReport(
-        call_id="empty", source_path="x.wav", duration_seconds=5.0, semantic=semantic,
+        call_id="empty",
+        source_path="x.wav",
+        duration_seconds=5.0,
+        semantic=semantic,
         paralinguistics=analyze_paralinguistics(call_audio, []),
-        transcript=empty, turns=[],
+        transcript=empty,
+        turns=[],
     )
     text = render_text(report)
     assert "no voiced frames" in text
@@ -150,12 +171,13 @@ def test_text_report_survives_an_empty_transcript(call_audio):
 
 # --- HTML view -------------------------------------------------------------
 
+
 def test_html_is_self_contained(report: CallReport):
     """No external assets means the report opens on an air-gapped machine."""
     html = render_html(report)
     assert html.lstrip().startswith("<!doctype html>")
-    assert "src=\"http" not in html
-    assert "href=\"http" not in html
+    assert 'src="http' not in html
+    assert 'href="http' not in html
     assert "<script" not in html
 
 
@@ -183,6 +205,7 @@ def test_html_footer_qualifies_the_claim_when_an_llm_judge_ran(report: CallRepor
 
 
 # --- writing ---------------------------------------------------------------
+
 
 def test_write_reports_produces_all_three(report: CallReport, tmp_path: Path):
     written = write_reports(report, tmp_path)

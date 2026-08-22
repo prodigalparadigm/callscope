@@ -25,6 +25,7 @@ def config(support_rubric, transcript_json: Path) -> PipelineConfig:
 
 # --- the happy path --------------------------------------------------------
 
+
 @pytest.mark.requires_ffmpeg
 def test_full_pipeline_produces_a_complete_report(call_wav: Path, config: PipelineConfig):
     report = analyze_call(call_wav, config)
@@ -68,10 +69,13 @@ def test_evidence_points_back_into_the_call(call_wav: Path, config: PipelineConf
 @pytest.mark.requires_ffmpeg
 def test_the_two_tracks_are_independent(call_wav: Path, support_rubric):
     """Removing the transcript must not degrade the paralinguistic track at all."""
-    with_transcript = analyze_call(call_wav, PipelineConfig(
-        rubric=support_rubric,
-        transcription=TranscriptionConfig(backend="null"),
-    ))
+    with_transcript = analyze_call(
+        call_wav,
+        PipelineConfig(
+            rubric=support_rubric,
+            transcription=TranscriptionConfig(backend="null"),
+        ),
+    )
     assert with_transcript.transcript.segments == []
     assert with_transcript.semantic.score == 0.0
     # ... and yet:
@@ -111,6 +115,7 @@ def test_explicit_call_id_wins(call_wav: Path, config: PipelineConfig):
 
 # --- failure handling ------------------------------------------------------
 
+
 def test_missing_rubric_is_rejected_up_front(call_wav: Path):
     with pytest.raises(ValueError, match="rubric is required"):
         analyze_call(call_wav, PipelineConfig())
@@ -133,43 +138,49 @@ def test_batch_isolates_failures(call_wav: Path, tmp_path: Path, config: Pipelin
     assert failures[0][0] == str(broken)
 
 
-def test_rubric_path_is_loaded_when_no_object_is_given(
-    call_wav: Path, transcript_json: Path
-):
+def test_rubric_path_is_loaded_when_no_object_is_given(call_wav: Path, transcript_json: Path):
     from callscope.cli import DEFAULT_RUBRIC
 
-    report = analyze_call(call_wav, PipelineConfig(
-        rubric_path=DEFAULT_RUBRIC,
-        transcription=TranscriptionConfig(backend="fixture", fixture_path=transcript_json),
-        skip_normalization=True,
-    ))
+    report = analyze_call(
+        call_wav,
+        PipelineConfig(
+            rubric_path=DEFAULT_RUBRIC,
+            transcription=TranscriptionConfig(backend="fixture", fixture_path=transcript_json),
+            skip_normalization=True,
+        ),
+    )
     assert report.metadata["rubric_id"] == "support_call_v1"
 
 
-def test_a_domain_agnostic_rubric_scores_the_same_call(
-    call_wav: Path, transcript_json: Path
-):
+def test_a_domain_agnostic_rubric_scores_the_same_call(call_wav: Path, transcript_json: Path):
     """Same binary, same audio, entirely different criteria: nothing is hardcoded."""
-    custom = parse_rubric({
-        "id": "shipping_v1", "name": "Shipping-specific",
-        "criteria": [
-            {"id": "reship", "name": "Offered a reship", "patterns": [r"reship"]},
-            {"id": "apology", "name": "Apologized", "patterns": [r"\bsorry\b|\bapolog"]},
-        ],
-    })
-    report = analyze_call(call_wav, PipelineConfig(
-        rubric=custom,
-        transcription=TranscriptionConfig(backend="fixture", fixture_path=transcript_json),
-        skip_normalization=True,
-    ))
+    custom = parse_rubric(
+        {
+            "id": "shipping_v1",
+            "name": "Shipping-specific",
+            "criteria": [
+                {"id": "reship", "name": "Offered a reship", "patterns": [r"reship"]},
+                {"id": "apology", "name": "Apologized", "patterns": [r"\bsorry\b|\bapolog"]},
+            ],
+        }
+    )
+    report = analyze_call(
+        call_wav,
+        PipelineConfig(
+            rubric=custom,
+            transcription=TranscriptionConfig(backend="fixture", fixture_path=transcript_json),
+            skip_normalization=True,
+        ),
+    )
     ids = {c.criterion_id for c in report.semantic.criteria}
     assert ids == {"reship", "apology"}
     by_id = {c.criterion_id: c for c in report.semantic.criteria}
-    assert by_id["reship"].passed          # the script does say "reshipping"
-    assert not by_id["apology"].passed     # the script never apologizes
+    assert by_id["reship"].passed  # the script does say "reshipping"
+    assert not by_id["apology"].passed  # the script never apologizes
 
 
 # --- CLI -------------------------------------------------------------------
+
 
 def test_cli_doctor_reports_capabilities(capsys):
     """doctor must describe the machine it is on, ffmpeg present or not."""
@@ -198,6 +209,7 @@ def test_cli_doctor_exit_code_signals_a_missing_ffmpeg(monkeypatch, capsys):
 
 # --- CLI usage errors ------------------------------------------------------
 
+
 def test_cli_rejects_an_unknown_report_format(tmp_path: Path, capsys):
     """Caught before any audio is decoded, and as a message rather than a traceback."""
     code = main(["analyze", "x.wav", "--out", str(tmp_path), "--formats", "pdf,json"])
@@ -218,10 +230,18 @@ def test_cli_reports_an_unwritable_output_directory(
     blocked.mkdir()
     blocked.chmod(0o500)
     try:
-        code = main([
-            "analyze", str(call_wav), "--transcript", str(transcript_json),
-            "--out", str(blocked), "--skip-normalization", "--quiet",
-        ])
+        code = main(
+            [
+                "analyze",
+                str(call_wav),
+                "--transcript",
+                str(transcript_json),
+                "--out",
+                str(blocked),
+                "--skip-normalization",
+                "--quiet",
+            ]
+        )
     finally:
         blocked.chmod(0o700)
     assert code == 1
@@ -232,10 +252,18 @@ def test_cli_rejects_a_transcript_and_a_model_backend_together(
     tmp_path: Path, transcript_json: Path, capsys
 ):
     """Silently ignoring --whisper would be worse than refusing the combination."""
-    code = main([
-        "analyze", "x.wav", "--out", str(tmp_path),
-        "--transcript", str(transcript_json), "--whisper", "mlx",
-    ])
+    code = main(
+        [
+            "analyze",
+            "x.wav",
+            "--out",
+            str(tmp_path),
+            "--transcript",
+            str(transcript_json),
+            "--whisper",
+            "mlx",
+        ]
+    )
     assert code == 2
     assert "conflict" in capsys.readouterr().err
 
@@ -258,13 +286,19 @@ def test_cli_demo_runs_end_to_end(tmp_path: Path, capsys):
 
 @pytest.mark.requires_ffmpeg
 def test_cli_analyze_writes_reports(tmp_path: Path, call_wav: Path, transcript_json: Path):
-    code = main([
-        "analyze", str(call_wav),
-        "--transcript", str(transcript_json),
-        "--out", str(tmp_path),
-        "--formats", "json",
-        "--quiet",
-    ])
+    code = main(
+        [
+            "analyze",
+            str(call_wav),
+            "--transcript",
+            str(transcript_json),
+            "--out",
+            str(tmp_path),
+            "--formats",
+            "json",
+            "--quiet",
+        ]
+    )
     assert code == 0
     written = list(tmp_path.glob("*.json"))
     assert len(written) == 1
@@ -296,11 +330,14 @@ def test_transcription_failure_degrades_instead_of_ending_the_run(
     broken = tmp_path / "broken.json"
     broken.write_text("{ not json at all", encoding="utf-8")
 
-    report = analyze_call(call_wav, PipelineConfig(
-        rubric=support_rubric,
-        transcription=TranscriptionConfig(backend="fixture", fixture_path=broken),
-        skip_normalization=True,
-    ))
+    report = analyze_call(
+        call_wav,
+        PipelineConfig(
+            rubric=support_rubric,
+            transcription=TranscriptionConfig(backend="fixture", fixture_path=broken),
+            skip_normalization=True,
+        ),
+    )
     assert report.transcript.backend == "failed"
     assert report.semantic.score == 0.0
     assert any("transcription failed" in w for w in report.warnings)
@@ -309,9 +346,7 @@ def test_transcription_failure_degrades_instead_of_ending_the_run(
     assert report.turns
 
 
-def test_report_metadata_records_the_diarization_diagnostic(
-    call_wav: Path, config: PipelineConfig
-):
+def test_report_metadata_records_the_diarization_diagnostic(call_wav: Path, config: PipelineConfig):
     """`separation` is how a consumer knows whether to trust per-speaker numbers."""
     config.skip_normalization = True
     metadata = analyze_call(call_wav, config).metadata

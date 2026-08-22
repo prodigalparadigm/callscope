@@ -28,6 +28,7 @@ def _write(tmp_path: Path, data: dict, name: str = "r.yaml") -> Path:
 
 # --- the bundled examples --------------------------------------------------
 
+
 @pytest.mark.parametrize("name", ["support_call.yaml", "sales_discovery.yaml"])
 def test_bundled_rubrics_load(name):
     rubric = load_rubric(RUBRIC_DIR / name)
@@ -58,6 +59,7 @@ def test_defaults_are_applied(tmp_path: Path):
 
 # --- format support --------------------------------------------------------
 
+
 def test_json_rubrics_load(tmp_path: Path):
     path = tmp_path / "r.json"
     path.write_text(json.dumps(MINIMAL), encoding="utf-8")
@@ -72,6 +74,7 @@ def test_yaml_and_json_produce_identical_rubrics(tmp_path: Path):
 
 
 # --- validation ------------------------------------------------------------
+
 
 def test_missing_file(tmp_path: Path):
     with pytest.raises(RubricError, match="not found"):
@@ -104,25 +107,25 @@ def test_no_criteria():
 
 def test_duplicate_criterion_ids():
     with pytest.raises(RubricError, match="duplicate criterion id"):
-        parse_rubric({
-            "id": "x",
-            "criteria": [
-                {"id": "a", "patterns": ["x"]},
-                {"id": "a", "patterns": ["y"]},
-            ],
-        })
+        parse_rubric(
+            {
+                "id": "x",
+                "criteria": [
+                    {"id": "a", "patterns": ["x"]},
+                    {"id": "a", "patterns": ["y"]},
+                ],
+            }
+        )
 
 
 def test_invalid_scope():
     with pytest.raises(RubricError, match="scope 'sometime' is not one of"):
-        parse_rubric({"id": "x", "criteria": [
-            {"id": "a", "patterns": ["x"], "scope": "sometime"}]})
+        parse_rubric({"id": "x", "criteria": [{"id": "a", "patterns": ["x"], "scope": "sometime"}]})
 
 
 def test_invalid_match_mode():
     with pytest.raises(RubricError, match="match must be"):
-        parse_rubric({"id": "x", "criteria": [
-            {"id": "a", "patterns": ["x"], "match": "some"}]})
+        parse_rubric({"id": "x", "criteria": [{"id": "a", "patterns": ["x"], "match": "some"}]})
 
 
 def test_criterion_without_patterns_is_rejected():
@@ -139,46 +142,58 @@ def test_invalid_regex_fails_at_load_not_at_scoring_time():
 
 def test_negative_weight_rejected():
     with pytest.raises(RubricError, match="must be > 0"):
-        parse_rubric({"id": "x", "criteria": [
-            {"id": "a", "patterns": ["x"], "weight": -1}]})
+        parse_rubric({"id": "x", "criteria": [{"id": "a", "patterns": ["x"], "weight": -1}]})
 
 
 def test_non_numeric_weight_rejected():
     with pytest.raises(RubricError, match="must be a number"):
-        parse_rubric({"id": "x", "criteria": [
-            {"id": "a", "patterns": ["x"], "weight": "heavy"}]})
+        parse_rubric({"id": "x", "criteria": [{"id": "a", "patterns": ["x"], "weight": "heavy"}]})
 
 
 def test_pass_threshold_out_of_range():
     with pytest.raises(RubricError, match=r"pass_threshold must be in \[0, 1\]"):
-        parse_rubric({"id": "x", "criteria": [
-            {"id": "a", "patterns": ["x"], "pass_threshold": 1.5}]})
+        parse_rubric(
+            {"id": "x", "criteria": [{"id": "a", "patterns": ["x"], "pass_threshold": 1.5}]}
+        )
 
 
 def test_zero_window_for_windowed_scope_rejected():
     with pytest.raises(RubricError, match="window_seconds must be > 0"):
-        parse_rubric({"id": "x", "criteria": [
-            {"id": "a", "patterns": ["x"], "scope": "first_seconds",
-             "window_seconds": 0}]})
+        parse_rubric(
+            {
+                "id": "x",
+                "criteria": [
+                    {"id": "a", "patterns": ["x"], "scope": "first_seconds", "window_seconds": 0}
+                ],
+            }
+        )
 
 
 def test_error_messages_name_the_offending_criterion():
     """A QA lead editing a 40-line rubric needs the index, not just 'invalid'."""
     with pytest.raises(RubricError, match=r"criteria\[1\]"):
-        parse_rubric({"id": "x", "criteria": [
-            {"id": "a", "patterns": ["x"]},
-            {"id": "b", "patterns": ["x"], "scope": "nonsense"},
-        ]})
+        parse_rubric(
+            {
+                "id": "x",
+                "criteria": [
+                    {"id": "a", "patterns": ["x"]},
+                    {"id": "b", "patterns": ["x"], "scope": "nonsense"},
+                ],
+            }
+        )
 
 
 # --- judge configuration ---------------------------------------------------
 
+
 def test_judge_backend_is_configurable():
-    rubric = parse_rubric({
-        "id": "x",
-        "judge": {"backend": "llm", "model": "claude-opus-5", "options": {"effort": "low"}},
-        "criteria": [{"id": "a", "patterns": ["x"]}],
-    })
+    rubric = parse_rubric(
+        {
+            "id": "x",
+            "judge": {"backend": "llm", "model": "claude-opus-5", "options": {"effort": "low"}},
+            "criteria": [{"id": "a", "patterns": ["x"]}],
+        }
+    )
     assert rubric.judge.backend == "llm"
     assert rubric.judge.model == "claude-opus-5"
     assert rubric.judge.options == {"effort": "low"}
@@ -186,11 +201,13 @@ def test_judge_backend_is_configurable():
 
 def test_unknown_judge_backend_rejected():
     with pytest.raises(RubricError, match="judge.backend"):
-        parse_rubric({"id": "x", "judge": {"backend": "vibes"},
-                      "criteria": [{"id": "a", "patterns": ["x"]}]})
+        parse_rubric(
+            {"id": "x", "judge": {"backend": "vibes"}, "criteria": [{"id": "a", "patterns": ["x"]}]}
+        )
 
 
 # --- normalization ---------------------------------------------------------
+
 
 def test_single_pattern_string_is_accepted():
     rubric = parse_rubric({"id": "x", "criteria": [{"id": "a", "patterns": "hello"}]})

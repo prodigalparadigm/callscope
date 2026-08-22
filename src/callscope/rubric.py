@@ -148,18 +148,14 @@ def _parse_criterion(item: Any, *, index: int, source: str) -> CriterionSpec:
     cid = _require_str(item, "id", where)
     scope = str(item.get("scope", "call")).strip()
     if scope not in VALID_SCOPES:
-        raise RubricError(
-            f"{where}: scope {scope!r} is not one of {sorted(VALID_SCOPES)}"
-        )
+        raise RubricError(f"{where}: scope {scope!r} is not one of {sorted(VALID_SCOPES)}")
 
     match = str(item.get("match", "any")).strip().lower()
     if match not in VALID_MATCH_MODES:
         raise RubricError(f"{where}: match must be 'any' or 'all', got {match!r}")
 
     patterns = _string_tuple(item.get("patterns"), where=f"{where}.patterns")
-    disqualifiers = _string_tuple(
-        item.get("disqualifiers"), where=f"{where}.disqualifiers"
-    )
+    disqualifiers = _string_tuple(item.get("disqualifiers"), where=f"{where}.disqualifiers")
 
     weight = _positive_float(item.get("weight", 1.0), where=f"{where}.weight")
     max_score = _positive_float(item.get("max_score", 1.0), where=f"{where}.max_score")
@@ -170,9 +166,7 @@ def _parse_criterion(item: Any, *, index: int, source: str) -> CriterionSpec:
 
     threshold = float(item.get("pass_threshold", 1.0))
     if not 0.0 <= threshold <= 1.0:
-        raise RubricError(
-            f"{where}: pass_threshold must be in [0, 1], got {threshold}"
-        )
+        raise RubricError(f"{where}: pass_threshold must be in [0, 1], got {threshold}")
 
     speaker = item.get("speaker")
     if speaker is not None:

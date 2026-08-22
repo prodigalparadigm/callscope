@@ -49,6 +49,7 @@ INTERRUPTED = CallScript(
 
 # --- talk time -------------------------------------------------------------
 
+
 def test_talk_time_matches_construction():
     audio, turns = _build(SIMPLE)
     p = analyze_paralinguistics(audio, turns)
@@ -82,9 +83,7 @@ def test_turn_counts_and_lengths():
 
 def test_a_speaker_who_never_talks_still_gets_a_row():
     """A 100/0 split is a finding; consumers must not KeyError on a monologue."""
-    script = CallScript(
-        duration=6.0, utterances=(Utterance(0.5, 5.5, "SPEAKER_00", f0_hz=120.0),)
-    )
+    script = CallScript(duration=6.0, utterances=(Utterance(0.5, 5.5, "SPEAKER_00", f0_hz=120.0),))
     audio, turns = _build(script)
     p = analyze_paralinguistics(audio, turns)
     assert {s.speaker for s in p.speakers} == set(SPEAKER_LABELS)
@@ -95,6 +94,7 @@ def test_a_speaker_who_never_talks_still_gets_a_row():
 
 
 # --- silence and dead air --------------------------------------------------
+
 
 def test_silence_totals_are_exact():
     audio, turns = _build(SIMPLE)
@@ -124,9 +124,12 @@ def test_dead_air_threshold_is_respected():
         ),
     )
     audio, turns = _build(script)
-    assert analyze_paralinguistics(
-        audio, turns, config=ParalinguisticConfig(dead_air_seconds=3.0)
-    ).dead_air_events == []
+    assert (
+        analyze_paralinguistics(
+            audio, turns, config=ParalinguisticConfig(dead_air_seconds=3.0)
+        ).dead_air_events
+        == []
+    )
     strict = analyze_paralinguistics(
         audio, turns, config=ParalinguisticConfig(dead_air_seconds=2.0)
     )
@@ -134,15 +137,14 @@ def test_dead_air_threshold_is_respected():
 
 
 def test_leading_and_trailing_silence_are_counted():
-    script = CallScript(
-        duration=10.0, utterances=(Utterance(2.0, 7.0, "SPEAKER_00", f0_hz=110.0),)
-    )
+    script = CallScript(duration=10.0, utterances=(Utterance(2.0, 7.0, "SPEAKER_00", f0_hz=110.0),))
     audio, turns = _build(script)
     p = analyze_paralinguistics(audio, turns)
     assert p.silence_seconds == pytest.approx(5.0)  # 2 s before + 3 s after
 
 
 # --- overlap and interruption ---------------------------------------------
+
 
 def test_overlap_duration_is_exact():
     audio, turns = _build(INTERRUPTED)
@@ -183,6 +185,7 @@ def test_brief_latch_on_is_not_an_interruption():
 
 # --- response latency ------------------------------------------------------
 
+
 def test_mean_response_latency():
     """Gaps are 6.0->6.0 (0 s) and 9.0->14.0 (5 s); mean 2.5 s."""
     audio, turns = _build(SIMPLE)
@@ -198,6 +201,7 @@ def test_latency_ignores_overlaps():
 
 
 # --- pitch -----------------------------------------------------------------
+
 
 def test_pitch_recovers_the_synthesized_f0():
     audio, turns = _build(SIMPLE)
@@ -238,6 +242,7 @@ def test_voiced_fraction_is_high_for_voiced_synthesis():
 
 # --- speech rate -----------------------------------------------------------
 
+
 def test_syllable_rate_recovers_the_modulation_frequency():
     """The envelope is modulated at exactly 4 Hz and 6 Hz by construction."""
     audio, turns = _build(SIMPLE)
@@ -248,11 +253,13 @@ def test_syllable_rate_recovers_the_modulation_frequency():
 
 def test_syllable_rate_tracks_a_faster_talker():
     slow = CallScript(
-        duration=8.0, utterances=(Utterance(0.0, 8.0, "SPEAKER_00", f0_hz=130.0,
-                                            syllable_rate_hz=3.0),))
+        duration=8.0,
+        utterances=(Utterance(0.0, 8.0, "SPEAKER_00", f0_hz=130.0, syllable_rate_hz=3.0),),
+    )
     fast = CallScript(
-        duration=8.0, utterances=(Utterance(0.0, 8.0, "SPEAKER_00", f0_hz=130.0,
-                                            syllable_rate_hz=7.0),))
+        duration=8.0,
+        utterances=(Utterance(0.0, 8.0, "SPEAKER_00", f0_hz=130.0, syllable_rate_hz=7.0),),
+    )
     slow_rate = analyze_paralinguistics(*_build(slow)).speaker("SPEAKER_00").syllable_rate_hz
     fast_rate = analyze_paralinguistics(*_build(fast)).speaker("SPEAKER_00").syllable_rate_hz
     assert slow_rate == pytest.approx(3.0, abs=0.35)
@@ -264,9 +271,7 @@ def test_words_per_minute_uses_the_transcript_when_present():
     audio, turns = _build(SIMPLE)
     # 30 words over SPEAKER_00's 12 s of talk time == 150 wpm.
     transcript = Transcript(
-        segments=[
-            TranscriptSegment(0.0, 6.0, " ".join(["word"] * 30), speaker="SPEAKER_00")
-        ]
+        segments=[TranscriptSegment(0.0, 6.0, " ".join(["word"] * 30), speaker="SPEAKER_00")]
     )
     p = analyze_paralinguistics(audio, turns, transcript=transcript)
     assert p.speaker("SPEAKER_00").words_per_minute == pytest.approx(150.0, abs=0.1)
@@ -284,6 +289,7 @@ def test_metrics_computed_without_a_transcript():
 
 # --- degenerate input ------------------------------------------------------
 
+
 def test_no_turns_produces_a_full_silence_profile():
     audio = AudioBuffer(np.zeros(16_000 * 5, dtype=np.float32), 16_000)
     p = analyze_paralinguistics(audio, [])
@@ -297,7 +303,6 @@ def test_no_turns_produces_a_full_silence_profile():
 def test_unsorted_turns_are_handled():
     audio, turns = _build(SIMPLE)
     shuffled = list(reversed(turns))
-    assert (
-        analyze_paralinguistics(audio, shuffled).silence_seconds
-        == pytest.approx(analyze_paralinguistics(audio, turns).silence_seconds)
+    assert analyze_paralinguistics(audio, shuffled).silence_seconds == pytest.approx(
+        analyze_paralinguistics(audio, turns).silence_seconds
     )

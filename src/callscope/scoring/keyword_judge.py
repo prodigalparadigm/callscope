@@ -56,18 +56,16 @@ class KeywordJudge:
             evidence = disqualified[:5]
         elif not segments:
             score = 0.0
-            rationale = (
-                f"no transcript content in scope '{criterion.scope}'"
-                + (f" for {criterion.speaker}" if criterion.speaker else "")
+            rationale = f"no transcript content in scope '{criterion.scope}'" + (
+                f" for {criterion.speaker}" if criterion.speaker else ""
             )
             evidence = []
         elif criterion.match == "all":
             # Partial credit is proportional: 3 of 4 required phrases scores 0.75.
             score = criterion.max_score * (matched_count / total_patterns)
             missing = [p for p in criterion.patterns if p not in hits]
-            rationale = (
-                f"matched {matched_count}/{total_patterns} required patterns"
-                + (f"; missing: {', '.join(missing[:3])}" if missing else "")
+            rationale = f"matched {matched_count}/{total_patterns} required patterns" + (
+                f"; missing: {', '.join(missing[:3])}" if missing else ""
             )
             evidence = _dedupe(hits)
         else:
@@ -136,9 +134,7 @@ def _dedupe(hits: dict[str, list[Evidence]], *, limit: int = 5) -> list[Evidence
     """
     seen: set[tuple[float, float]] = set()
     out: list[Evidence] = []
-    for evidence in sorted(
-        (e for group in hits.values() for e in group), key=lambda e: e.start
-    ):
+    for evidence in sorted((e for group in hits.values() for e in group), key=lambda e: e.start):
         key = (evidence.start, evidence.end)
         if key in seen:
             continue

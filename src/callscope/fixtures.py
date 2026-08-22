@@ -14,6 +14,7 @@ speaker-like signal, which is all the DSP stages need.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from scipy.signal import lfilter
@@ -142,7 +143,8 @@ def _render_voice(
     peak = float(np.max(np.abs(filtered)))
     if peak > 0:
         filtered *= amplitude / peak
-    return filtered
+    voiced: np.ndarray = filtered
+    return voiced
 
 
 def _resonator(x: np.ndarray, sample_rate: int, freq: float, bandwidth: float) -> np.ndarray:
@@ -151,7 +153,8 @@ def _resonator(x: np.ndarray, sample_rate: int, freq: float, bandwidth: float) -
     theta = 2.0 * np.pi * freq / sample_rate
     a = [1.0, -2.0 * r * np.cos(theta), r * r]
     b = [(1.0 - r) * np.sqrt(1.0 - 2.0 * r * np.cos(2.0 * theta) + r * r)]
-    return lfilter(b, a, x)
+    out: np.ndarray = np.asarray(lfilter(b, a, x), dtype=np.float64)
+    return out
 
 
 def _edge_fade(n: int, sample_rate: int, fade_seconds: float) -> np.ndarray:
@@ -176,23 +179,59 @@ def default_two_speaker_script() -> CallScript:
     * one deliberate 0.6 s overlap at 9.4-10.0 s (SPEAKER_01 cutting in)
     """
     utterances = (
-        Utterance(0.5, 3.0, "SPEAKER_00", f0_hz=110.0, syllable_rate_hz=4.0,
-                  text="thanks for calling, this is alex, may i take your name"),
-        Utterance(3.4, 5.4, "SPEAKER_01", f0_hz=215.0, syllable_rate_hz=5.0,
-                  text="hi alex, my order has not arrived yet"),
-        Utterance(5.8, 9.8, "SPEAKER_00", f0_hz=110.0, syllable_rate_hz=4.0,
-                  text="let me pull that up and check the shipping status for you"),
-        Utterance(9.4, 10.0, "SPEAKER_01", f0_hz=215.0, syllable_rate_hz=5.5,
-                  text="it was supposed to be here monday"),
-        Utterance(10.4, 13.0, "SPEAKER_00", f0_hz=110.0, syllable_rate_hz=4.0,
-                  text="i can see the delay, i am reshipping it today at no charge"),
-        Utterance(16.5, 20.0, "SPEAKER_01", f0_hz=215.0, syllable_rate_hz=5.0,
-                  text="that works, thank you for your help, goodbye"),
+        Utterance(
+            0.5,
+            3.0,
+            "SPEAKER_00",
+            f0_hz=110.0,
+            syllable_rate_hz=4.0,
+            text="thanks for calling, this is alex, may i take your name",
+        ),
+        Utterance(
+            3.4,
+            5.4,
+            "SPEAKER_01",
+            f0_hz=215.0,
+            syllable_rate_hz=5.0,
+            text="hi alex, my order has not arrived yet",
+        ),
+        Utterance(
+            5.8,
+            9.8,
+            "SPEAKER_00",
+            f0_hz=110.0,
+            syllable_rate_hz=4.0,
+            text="let me pull that up and check the shipping status for you",
+        ),
+        Utterance(
+            9.4,
+            10.0,
+            "SPEAKER_01",
+            f0_hz=215.0,
+            syllable_rate_hz=5.5,
+            text="it was supposed to be here monday",
+        ),
+        Utterance(
+            10.4,
+            13.0,
+            "SPEAKER_00",
+            f0_hz=110.0,
+            syllable_rate_hz=4.0,
+            text="i can see the delay, i am reshipping it today at no charge",
+        ),
+        Utterance(
+            16.5,
+            20.0,
+            "SPEAKER_01",
+            f0_hz=215.0,
+            syllable_rate_hz=5.0,
+            text="that works, thank you for your help, goodbye",
+        ),
     )
     return CallScript(duration=20.0, utterances=utterances)
 
 
-def script_to_transcript_dict(script: CallScript) -> dict:
+def script_to_transcript_dict(script: CallScript) -> dict[str, Any]:
     """Whisper-shaped transcript for a script, for the ``fixture`` backend.
 
     Lets the semantic track be tested end to end without a speech model, since

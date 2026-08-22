@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      # Twelve tests shell out to ffmpeg. They skip without it; install it so
+      # the full suite actually runs.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install
+        run: uv pip install --system -e ".[dev]"
+
+      # No speech model is installed: the default path has to work without one.
+      - name: Test
+        run: python -m pytest -rs
+
+      - name: Lint
+        run: ruff check . && ruff format --check .
+
+      - name: Types
+        run: mypy

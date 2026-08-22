@@ -4,10 +4,12 @@ version = "0.1.0"
 description = "Fully local two-speaker call analysis and QA scoring pipeline."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [{ name = "Kathleen Bartin", email = "kathleen@prodigalparadigm.com" }]
 keywords = ["speech", "diarization", "call-center", "qa", "whisper", "local-first"]
 classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3.12",
   "Topic :: Multimedia :: Sound/Audio :: Analysis",
@@ -33,15 +35,26 @@ openai = ["openai-whisper>=20231117"]  # reference PyTorch implementation
 pyannote = ["pyannote.audio>=3.1"]
 
 # Optional LLM judge for the semantic track.
-llm = ["anthropic>=0.40"]
+# 1.0 is the floor the code is written against: `output_config` structured
+# output and the current error hierarchy both landed there.
+llm = ["anthropic>=1.0,<2"]
 
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6"]
+# Floors are the oldest releases this repository was actually checked against.
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.13",
+  "mypy>=1.12",
+  "types-PyYAML>=6.0",
+  "scipy-stubs>=1.18",
+]
 
 [project.scripts]
 callscope = "callscope.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/comelyhunger/callscope"
+Source = "https://github.com/comelyhunger/callscope"
 
 [build-system]
 requires = ["hatchling"]
@@ -67,3 +80,17 @@ addopts = "-q --strict-markers"
 markers = [
   "requires_ffmpeg: test shells out to ffmpeg and is skipped when it is absent",
 ]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/callscope"]
+# The test suite deliberately builds malformed rubrics, judges and transcripts to
+# prove the pipeline refuses them, so it is linted but not type-checked.
+
+[[tool.mypy.overrides]]
+# Optional backends behind extras. They ship no stubs, and the dev environment
+# installs none of them, so their absence must not be a type error -- the code
+# that touches them is guarded by an availability probe at runtime.
+module = ["pyannote.*", "mlx_whisper.*", "faster_whisper.*", "whisper.*"]
+ignore_missing_imports = true

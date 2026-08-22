@@ -21,6 +21,7 @@ from callscope.transcribe import (
 
 # --- backend selection -----------------------------------------------------
 
+
 def test_preference_order_is_documented_and_stable():
     """Changing this order changes which model a reviewer's machine picks."""
     assert BACKEND_PREFERENCE == ("mlx", "faster", "openai", "fixture", "null")
@@ -62,6 +63,7 @@ def test_unknown_backend_rejected():
 
 # --- the null backend degrades rather than failing -------------------------
 
+
 def test_null_backend_returns_an_empty_transcript_with_a_warning(call_wav: Path):
     transcript, warnings = transcribe(call_wav, TranscriptionConfig(backend="null"))
     assert transcript.segments == []
@@ -75,6 +77,7 @@ def test_missing_audio_raises(tmp_path: Path):
 
 
 # --- the fixture backend ---------------------------------------------------
+
 
 def test_fixture_backend_loads_a_transcript(call_wav: Path, transcript_json: Path):
     transcript, warnings = transcribe(
@@ -93,8 +96,9 @@ def test_fixture_backend_without_a_path_explains_itself(call_wav: Path):
 
 def test_fixture_backend_on_a_missing_file(call_wav: Path, tmp_path: Path):
     with pytest.raises(TranscriptionError, match="not found"):
-        transcribe(call_wav, TranscriptionConfig(
-            backend="fixture", fixture_path=tmp_path / "nope.json"))
+        transcribe(
+            call_wav, TranscriptionConfig(backend="fixture", fixture_path=tmp_path / "nope.json")
+        )
 
 
 def test_fixture_backend_on_invalid_json(call_wav: Path, tmp_path: Path):
@@ -106,11 +110,14 @@ def test_fixture_backend_on_invalid_json(call_wav: Path, tmp_path: Path):
 
 # --- transcript parsing ----------------------------------------------------
 
+
 def test_whisper_shaped_document_parses():
-    transcript = transcript_from_dict({
-        "language": "en",
-        "segments": [{"start": 0.0, "end": 1.0, "text": " hello "}],
-    })
+    transcript = transcript_from_dict(
+        {
+            "language": "en",
+            "segments": [{"start": 0.0, "end": 1.0, "text": " hello "}],
+        }
+    )
     assert transcript.language == "en"
     assert transcript.segments[0].text == "hello"
 
@@ -122,23 +129,29 @@ def test_bare_segment_list_parses():
 
 def test_malformed_segments_are_skipped_not_fatal():
     """One bad timestamp in a 40-minute call must not lose the other 39 minutes."""
-    transcript = transcript_from_dict({"segments": [
-        {"start": 0.0, "end": 1.0, "text": "good"},
-        {"start": "x", "end": 2.0, "text": "bad start"},
-        {"end": 3.0, "text": "missing start"},
-        {"start": 5.0, "end": 4.0, "text": "inverted"},
-        {"start": 6.0, "end": 7.0, "text": "   "},
-        "not even a mapping",
-        {"start": 8.0, "end": 9.0, "text": "also good"},
-    ]})
+    transcript = transcript_from_dict(
+        {
+            "segments": [
+                {"start": 0.0, "end": 1.0, "text": "good"},
+                {"start": "x", "end": 2.0, "text": "bad start"},
+                {"end": 3.0, "text": "missing start"},
+                {"start": 5.0, "end": 4.0, "text": "inverted"},
+                {"start": 6.0, "end": 7.0, "text": "   "},
+                "not even a mapping",
+                {"start": 8.0, "end": 9.0, "text": "also good"},
+            ]
+        }
+    )
     assert [s.text for s in transcript.segments] == ["good", "also good"]
 
 
 def test_segments_come_back_sorted():
-    transcript = transcript_from_dict([
-        {"start": 5.0, "end": 6.0, "text": "later"},
-        {"start": 1.0, "end": 2.0, "text": "earlier"},
-    ])
+    transcript = transcript_from_dict(
+        [
+            {"start": 5.0, "end": 6.0, "text": "later"},
+            {"start": 1.0, "end": 2.0, "text": "earlier"},
+        ]
+    )
     assert [s.text for s in transcript.segments] == ["earlier", "later"]
 
 
@@ -154,11 +167,14 @@ def test_non_list_segments_rejected():
 
 # --- speaker attribution ---------------------------------------------------
 
+
 def test_segments_are_attributed_by_maximal_overlap():
-    transcript = Transcript(segments=[
-        TranscriptSegment(0.0, 2.0, "first"),
-        TranscriptSegment(3.0, 5.0, "second"),
-    ])
+    transcript = Transcript(
+        segments=[
+            TranscriptSegment(0.0, 2.0, "first"),
+            TranscriptSegment(3.0, 5.0, "second"),
+        ]
+    )
     turns = [
         SpeakerTurn(0.0, 2.5, "SPEAKER_00"),
         SpeakerTurn(2.5, 6.0, "SPEAKER_01"),
@@ -187,7 +203,9 @@ def test_attribution_without_turns_is_a_no_op():
 
 def test_attribution_preserves_provenance():
     transcript = Transcript(
-        segments=[TranscriptSegment(0.0, 1.0, "x")], backend="mlx", model="turbo",
+        segments=[TranscriptSegment(0.0, 1.0, "x")],
+        backend="mlx",
+        model="turbo",
         language="en",
     )
     out = attribute_speakers(transcript, [SpeakerTurn(0.0, 1.0, "SPEAKER_00")])
@@ -196,21 +214,26 @@ def test_attribution_preserves_provenance():
 
 # --- transcript helpers ----------------------------------------------------
 
+
 def test_word_counts_per_speaker():
-    transcript = Transcript(segments=[
-        TranscriptSegment(0.0, 1.0, "one two three", "SPEAKER_00"),
-        TranscriptSegment(1.0, 2.0, "four five", "SPEAKER_01"),
-    ])
+    transcript = Transcript(
+        segments=[
+            TranscriptSegment(0.0, 1.0, "one two three", "SPEAKER_00"),
+            TranscriptSegment(1.0, 2.0, "four five", "SPEAKER_01"),
+        ]
+    )
     assert transcript.word_count() == 5
     assert transcript.word_count("SPEAKER_00") == 3
     assert transcript.word_count("SPEAKER_01") == 2
 
 
 def test_transcript_text_joins_segments():
-    transcript = Transcript(segments=[
-        TranscriptSegment(0.0, 1.0, "hello"),
-        TranscriptSegment(1.0, 2.0, "world"),
-    ])
+    transcript = Transcript(
+        segments=[
+            TranscriptSegment(0.0, 1.0, "hello"),
+            TranscriptSegment(1.0, 2.0, "world"),
+        ]
+    )
     assert transcript.text == "hello world"
 
 

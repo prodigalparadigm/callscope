@@ -23,6 +23,7 @@ def _truth_at(script: CallScript, start: float, end: float) -> set[str]:
 
 # --- the constraint itself -------------------------------------------------
 
+
 def test_never_emits_more_than_two_labels(call_audio, script):
     result = diarize(call_audio)
     labels = {t.speaker for t in result.turns}
@@ -57,6 +58,7 @@ def test_speaker_00_is_whoever_spoke_first(call_audio, script):
 
 
 # --- the single-speaker guard ---------------------------------------------
+
 
 def test_monologue_is_not_forced_into_two_speakers(single_speaker_audio):
     """2-means will always produce two clusters; the guard must reject them."""
@@ -101,6 +103,7 @@ def test_similar_pitched_speakers_still_separate():
 
 # --- degenerate input ------------------------------------------------------
 
+
 def test_silence_yields_no_turns():
     silent = AudioBuffer(np.zeros(16_000 * 3, dtype=np.float32), 16_000)
     result = diarize(silent)
@@ -117,6 +120,7 @@ def test_very_short_audio_does_not_crash():
 
 # --- reproducibility -------------------------------------------------------
 
+
 def test_diarization_is_deterministic(call_audio):
     """Same audio, same turns. A QA score that drifts between runs is worthless."""
     first = diarize(call_audio).turns
@@ -125,6 +129,7 @@ def test_diarization_is_deterministic(call_audio):
 
 
 # --- turn hygiene ----------------------------------------------------------
+
 
 def test_turns_are_sorted_and_non_overlapping(call_audio):
     turns = diarize(call_audio).turns
@@ -141,6 +146,7 @@ def test_turns_stay_within_the_recording(call_audio):
 
 
 # --- backend selection -----------------------------------------------------
+
 
 def test_explicit_cluster_backend(call_audio):
     assert diarize(call_audio, backend="cluster").backend == "cluster"
@@ -171,6 +177,7 @@ def test_pyannote_available_never_raises():
 
 
 # --- VAD building blocks ---------------------------------------------------
+
 
 def test_vad_finds_the_scripted_utterances(call_audio, script):
     segments = detect_speech(call_audio.samples, call_audio.sample_rate)
