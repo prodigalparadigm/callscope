@@ -51,7 +51,7 @@ def test_naming_an_uninstalled_backend_fails_with_an_install_hint():
 
     if importlib.util.find_spec("mlx_whisper") is not None:
         pytest.skip("mlx-whisper is installed in this environment")
-    with pytest.raises(TranscriptionError, match=r"pip install 'callscope\[mlx\]'"):
+    with pytest.raises(TranscriptionError, match=r"pip install -e '\.\[mlx\]'"):
         select_backend("mlx")
 
 
