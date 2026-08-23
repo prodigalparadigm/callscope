@@ -19,10 +19,11 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
+      # setup-uv with python-version already created and activated .venv;
+      # install into it. (--system targets the runner's externally managed
+      # interpreter and fails; a second `uv venv` collides with this one.)
       - name: Install
-        run: |
-          uv venv --python 3.12
-          uv pip install -e ".[dev]"
+        run: uv pip install -e ".[dev]"
 
       # No speech model is installed: the default path has to work without one.
       - name: Test
