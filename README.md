@@ -140,6 +140,10 @@ Read this section before trusting a number out of this tool.
 
 - **No PII redaction.** Transcripts are written to disk verbatim. If you enable the LLM judge, redaction is your responsibility and there is no hook for it yet.
 
+## Authorship
+
+Kathleen Bartin, with Claude. Co-authored at Prodigal Paradigm LLC in August 2026 using Claude Code: the design decisions, the tests, and this README were produced together. The co-byline is the house standard, not small print.
+
 ## License
 
 MIT. Copyright (c) 2026 Kathleen Bartin. See [LICENSE](LICENSE).
