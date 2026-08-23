@@ -20,14 +20,16 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install
-        run: uv pip install --system -e ".[dev]"
+        run: |
+          uv venv --python 3.12
+          uv pip install -e ".[dev]"
 
       # No speech model is installed: the default path has to work without one.
       - name: Test
-        run: python -m pytest -rs
+        run: uv run python -m pytest -rs
 
       - name: Lint
-        run: ruff check . && ruff format --check .
+        run: uv run ruff check . && uv run ruff format --check .
 
       - name: Types
-        run: mypy
+        run: uv run mypy
