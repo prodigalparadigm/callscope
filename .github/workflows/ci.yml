@@ -26,10 +26,10 @@ jobs:
 
       # No speech model is installed: the default path has to work without one.
       - name: Test
-        run: uv run python -m pytest -rs
+        run: .venv/bin/python -m pytest -rs
 
       - name: Lint
-        run: uv run ruff check . && uv run ruff format --check .
+        run: .venv/bin/ruff check . && .venv/bin/ruff format --check .
 
       - name: Types
-        run: uv run mypy
+        run: .venv/bin/mypy
